@@ -4,14 +4,21 @@
 // supports MediaRecorder + getUserMedia.  There is no always-on
 // listening: recording starts only on an explicit click of the mic
 // button, stops on a second click, and the captured blob is POSTed
-// to /chat/voice (the canonical STT -> run_vera_chat_turn -> optional
-// TTS path).
+// to /chat/voice/stream (the canonical STT -> run_vera_chat_turn ->
+// progressive text-chunk + early-chunk TTS path).  A legacy batch
+// fallback to /chat/voice is kept for browsers without streaming
+// ReadableStream support or when the stream fetch fails before any
+// event is seen.
 //
-// Rendering parity: the /chat/voice response carries the canonical
-// turns array produced by the shared chat helper.  We hand that array
-// to the main page IIFE's ``window.__veraApplyServerTurns`` hook so
-// assistant replies render through the SAME bounded markdown subset
-// that typed replies use.  There is no second renderer to drift.
+// Rendering parity: the /chat/voice/stream ``done`` event carries the
+// canonical turns array produced by the shared chat helper.  We hand
+// that array to the main page IIFE's ``window.__veraApplyServerTurns``
+// hook so assistant replies render through the SAME bounded markdown
+// subset that typed replies use.  There is no second renderer to
+// drift.  Until the ``done`` event arrives, chunk text renders into a
+// progressive "is-streaming" bubble using escape-only plain text so
+// partial markdown (unterminated fenced block, etc.) cannot produce
+// flicker artifacts.
 //
 // Typed Vera still works even if JS or the mic is unavailable —
 // progressive enhancement only.
@@ -86,7 +93,7 @@
 
   function startRecording() {
     clearError();
-    setState("Requesting microphone\u2026");
+    setState("Requesting microphone…");
     micBtn.disabled = true;
     navigator.mediaDevices
       .getUserMedia({ audio: true })
@@ -137,7 +144,7 @@
         micBtn.setAttribute("aria-pressed", "true");
         micBtn.setAttribute("aria-label", "Stop dictation");
         micBtn.classList.add("is-recording");
-        setState("Recording\u2026 click again to send");
+        setState("Recording… click again to send");
       })
       .catch(function (err) {
         micBtn.disabled = false;
@@ -157,7 +164,7 @@
   function stopRecording() {
     if (!recording || !recorder) return;
     micBtn.disabled = true;
-    setState("Stopping\u2026");
+    setState("Stopping…");
     try {
       recorder.stop();
     } catch (err) {
@@ -186,7 +193,7 @@
     if (!chunks.length) {
       micBtn.disabled = false;
       setState("Idle");
-      setError("No audio was captured \u2014 please try again.");
+      setError("No audio was captured — please try again.");
       return;
     }
     var mime =
@@ -195,7 +202,7 @@
       "audio/webm";
     var blob = new Blob(chunks, { type: mime });
     chunks = [];
-    setState("Uploading \u2014 " + Math.round(blob.size / 1024) + " KB\u2026");
+    setState("Uploading — " + Math.round(blob.size / 1024) + " KB…");
     uploadBlob(blob, mime);
   }
 
@@ -234,40 +241,60 @@
     micBtn.disabled = true;
     var speakResponse =
       speakCheckbox && !speakCheckbox.disabled && speakCheckbox.checked;
+
+    // Progressive state transitions while the request is in flight.
+    // Each timer is cleared the moment the response arrives so the
+    // final state always reflects truthful server-reported progress,
+    // never a fabricated or lingering in-flight label.
+    clearStagingTimers();
+    _stagingTimer1 = setTimeout(function () {
+      if (uploading) setState("Transcribing…");
+    }, 350);
+    _stagingTimer2 = setTimeout(function () {
+      if (uploading) setState("Vera thinking…");
+    }, 1400);
+    if (speakResponse) {
+      _stagingTimer3 = setTimeout(function () {
+        if (uploading) setState("Synthesizing speech…");
+      }, 4500);
+    }
+
+    // Prefer the streaming endpoint so the reply renders
+    // progressively and TTS starts from the first stable chunk.
+    // Falls back to the legacy batch endpoint if the browser lacks
+    // ReadableStream reader support or the stream fetch fails before
+    // producing any events.  Both endpoints share the same canonical
+    // STT / Vera / preview trust boundaries server-side.
+    var canStream =
+      typeof window.ReadableStream === "function" &&
+      typeof TextDecoder === "function";
+    if (canStream) {
+      streamDictation(blob, mime, speakResponse).catch(function (err) {
+        // streamDictation only rejects when the initial fetch failed
+        // before any event arrived (network / 4xx).  Fall back to the
+        // legacy endpoint so one stream failure does not drop the
+        // operator's turn.  Mid-stream errors are handled inline and
+        // never reach this catch.
+        setError(errMessage(err) || "Streaming unavailable — retrying batch mode.");
+        postBatchDictation(blob, mime, speakResponse);
+      });
+    } else {
+      postBatchDictation(blob, mime, speakResponse);
+    }
+  }
+
+  // Batch fallback — the legacy ``/chat/voice`` JSON round-trip.
+  // Kept intact so operators with older browsers (no ReadableStream)
+  // and any direct client still see the same trust-boundary-
+  // preserving behavior.  Also the safety net when the streaming
+  // endpoint fails before any event is emitted.
+  function postBatchDictation(blob, mime, speakResponse) {
     var params = new URLSearchParams();
     if (sessionId) params.set("session_id", sessionId);
     if (speakResponse) params.set("speak_response", "1");
     var url = "/chat/voice";
     var qs = params.toString();
     if (qs) url += "?" + qs;
-
-    // Progressive state transitions while the request is in flight.
-    // The server does STT -> Vera -> optional TTS in one round trip,
-    // so we cannot observe per-stage progress from the client, but we
-    // can still reflect the bounded stages the operator would expect
-    // to see: "Transcribing…" after a short delay, then
-    // "Vera thinking…" once STT would typically be done.  Both timers
-    // are cleared the moment the response arrives so the final state
-    // always reflects truthful server-reported progress, never a
-    // fabricated or lingering in-flight label.
-    clearStagingTimers();
-    _stagingTimer1 = setTimeout(function () {
-      if (uploading) setState("Transcribing\u2026");
-    }, 350);
-    _stagingTimer2 = setTimeout(function () {
-      if (uploading) setState("Vera thinking\u2026");
-    }, 1400);
-    // Additional stage — only fires when the operator asked for a
-    // spoken reply.  Without it, a long TTS synthesis phase looks
-    // like Vera is stalled; the label tells the truth about where
-    // the remaining time is going.  The timer is canceled the moment
-    // the response arrives, so a fast turn never shows this label.
-    if (speakResponse) {
-      _stagingTimer3 = setTimeout(function () {
-        if (uploading) setState("Synthesizing speech\u2026");
-      }, 4500);
-    }
-
     fetch(url, {
       method: "POST",
       body: blob,
@@ -296,17 +323,9 @@
             ("Dictation failed (" + result.status + ")");
           setState("Idle");
           setError(msg);
-          // Even on failure, if the payload carries fresh turns (e.g.
-          // STT succeeded but Vera errored), render them so the
-          // operator sees the voice-transcript turn land in the thread.
           if (payload && Array.isArray(payload.turns)) {
             applyTurnsUpdate(payload.turns, payload.turn_count);
           }
-          // When the payload carried canonical preview truth, reflect it
-          // in the pane too.  ``preview`` is authoritative only when
-          // ``has_preview_truth`` is set — otherwise it's an STT-only
-          // failure where the pre-existing preview on disk is the real
-          // answer and we must not clobber the visible pane.
           if (payload && payload.has_preview_truth === true) {
             applyPreviewUpdate(payload.preview, payload.session_id);
           }
@@ -323,6 +342,266 @@
       });
   }
 
+  // Streaming dictation — progressive text + ordered audio.
+  //
+  // Reads an NDJSON stream from ``/chat/voice/stream``.  Each line is
+  // a single event (see ``vera_web.app._run_voice_stream`` for the
+  // schema).  The client:
+  //
+  //   * renders ``text_chunk`` events into a growing assistant
+  //     bubble so the operator sees the reply build up live;
+  //   * queues ``audio_chunk`` URLs into an in-order playback queue
+  //     that starts the moment the first chunk lands;
+  //   * swaps the progressive bubble for the canonical rendered
+  //     turns on ``done`` so markdown lands identically to typed
+  //     replies.
+  //
+  // Fails soft: a broken stream surfaces an error line and the partial
+  // rendered text stays on screen.  An init-time failure rejects the
+  // returned promise so ``uploadBlob`` can fall back to the batch
+  // endpoint without dropping the operator's turn.
+  function streamDictation(blob, mime, speakResponse) {
+    var params = new URLSearchParams();
+    if (sessionId) params.set("session_id", sessionId);
+    if (speakResponse) params.set("speak_response", "1");
+    var url = "/chat/voice/stream";
+    var qs = params.toString();
+    if (qs) url += "?" + qs;
+
+    var progressive = beginProgressiveAssistantBubble();
+    var audioQueue = [];
+    var playing = false;
+    var firstAudioPlayed = false;
+    var anyEventSeen = false;
+    var finalPayload = null;
+
+    function playNext() {
+      if (playing) return;
+      var next = audioQueue.shift();
+      if (!next || !audioEl) return;
+      playing = true;
+      audioEl.hidden = false;
+      audioEl.src = next;
+      if (!firstAudioPlayed) {
+        firstAudioPlayed = true;
+        setState("Speaking reply…");
+      }
+      var onEnd = function () {
+        playing = false;
+        audioEl.removeEventListener("ended", onEnd);
+        audioEl.removeEventListener("error", onErr);
+        playNext();
+      };
+      var onErr = function () {
+        // A single chunk failing to play should NOT silence the
+        // rest of the reply — skip to the next chunk and keep
+        // going.  The assistant text is already visible, so the
+        // operator does not lose information.
+        playing = false;
+        audioEl.removeEventListener("ended", onEnd);
+        audioEl.removeEventListener("error", onErr);
+        playNext();
+      };
+      audioEl.addEventListener("ended", onEnd);
+      audioEl.addEventListener("error", onErr);
+      var playPromise = audioEl.play();
+      if (playPromise && typeof playPromise.catch === "function") {
+        playPromise.catch(function () {
+          // Autoplay blocked — the element has controls so the
+          // operator can start playback.  Treat as "current chunk
+          // played" to unblock the queue; subsequent chunks will try
+          // again under the same policy.
+          playing = false;
+          audioEl.removeEventListener("ended", onEnd);
+          audioEl.removeEventListener("error", onErr);
+          playNext();
+        });
+      }
+    }
+
+    function enqueueAudio(audioUrl) {
+      audioQueue.push(audioUrl);
+      playNext();
+    }
+
+    return new Promise(function (resolve, reject) {
+      fetch(url, {
+        method: "POST",
+        body: blob,
+        headers: { "Content-Type": mime || "audio/webm" },
+        credentials: "same-origin",
+      })
+        .then(function (resp) {
+          if (!resp.ok || !resp.body || !resp.body.getReader) {
+            if (anyEventSeen) {
+              resolve();
+            } else {
+              reject(new Error("Stream unavailable (" + resp.status + ")"));
+            }
+            return;
+          }
+          var reader = resp.body.getReader();
+          var decoder = new TextDecoder("utf-8");
+          var buffer = "";
+
+          function pump() {
+            reader
+              .read()
+              .then(function (result) {
+                if (result.done) {
+                  if (buffer.trim().length > 0) {
+                    handleEventLine(buffer);
+                    buffer = "";
+                  }
+                  finishStream();
+                  return;
+                }
+                buffer += decoder.decode(result.value, { stream: true });
+                var newlineIndex = buffer.indexOf("\n");
+                while (newlineIndex !== -1) {
+                  var line = buffer.slice(0, newlineIndex);
+                  buffer = buffer.slice(newlineIndex + 1);
+                  if (line.trim().length > 0) handleEventLine(line);
+                  newlineIndex = buffer.indexOf("\n");
+                }
+                pump();
+              })
+              .catch(function (err) {
+                setError(errMessage(err));
+                finishStream();
+              });
+          }
+
+          function handleEventLine(line) {
+            anyEventSeen = true;
+            var evt;
+            try {
+              evt = JSON.parse(line);
+            } catch (_e) {
+              return;
+            }
+            if (!evt || typeof evt.event !== "string") return;
+            if (evt.event === "ready" || evt.event === "stt") {
+              return;
+            }
+            if (evt.event === "reply_start") {
+              setState("Vera replying…");
+              return;
+            }
+            if (evt.event === "text_chunk") {
+              progressive.appendChunk(String(evt.text || ""));
+              return;
+            }
+            if (evt.event === "audio_chunk") {
+              var audioUrl = String(evt.audio_url || "");
+              if (audioUrl) enqueueAudio(audioUrl);
+              return;
+            }
+            if (evt.event === "audio_chunk_failed") {
+              // No fabricated URL — just continue.  The reply text
+              // is already visible; the operator simply does not hear
+              // this chunk.  Later chunks may still synthesize and
+              // play.
+              return;
+            }
+            if (evt.event === "done") {
+              finalPayload = evt;
+            }
+          }
+
+          function finishStream() {
+            uploading = false;
+            clearStagingTimers();
+            micBtn.disabled = false;
+            if (finalPayload) {
+              applyStreamingDone(finalPayload, firstAudioPlayed);
+            } else {
+              setState("Idle");
+              setError("Stream ended unexpectedly.");
+              progressive.finalize();
+            }
+            resolve();
+          }
+
+          pump();
+        })
+        .catch(function (err) {
+          if (anyEventSeen) {
+            resolve();
+          } else {
+            reject(err);
+          }
+        });
+    });
+  }
+
+  // Snapshot-apply the canonical ``done`` payload over the progressive
+  // bubble so the final state matches the batch endpoint's rendered
+  // output (bounded markdown, preview pane refresh, status-derived
+  // state label).
+  function applyStreamingDone(done, firstAudioPlayed) {
+    if (!done) return;
+    if (Array.isArray(done.turns)) {
+      applyTurnsUpdate(done.turns, done.turns.length);
+    }
+    if (done.has_preview_truth === true) {
+      applyPreviewUpdate(done.preview, done.session_id);
+    }
+    var sttOk = done.stt && done.stt.success;
+    if (!sttOk) {
+      var sttErr =
+        (done.stt && done.stt.error) ||
+        done.error ||
+        "Transcription failed.";
+      setState("Idle");
+      setError(sttErr);
+      return;
+    }
+    clearError();
+    if (!firstAudioPlayed) {
+      setState(deriveStateFromCanonicalStatus(done));
+    }
+  }
+
+  // Progressive assistant bubble — a single dedicated thread entry
+  // we grow as ``text_chunk`` events arrive.  On ``done`` it is
+  // replaced wholesale by the canonical rendered turns so markdown
+  // parity is preserved.  Until then the growing text uses plain
+  // escape-only rendering to keep things legible without risking
+  // partial-markdown artifacts.
+  function beginProgressiveAssistantBubble() {
+    var thread = document.getElementById("thread");
+    if (!thread) {
+      return { appendChunk: function () {}, finalize: function () {} };
+    }
+    var bubble = document.createElement("article");
+    bubble.className = "bubble assistant is-streaming";
+    bubble.dataset.streaming = "1";
+    var role = document.createElement("div");
+    role.className = "role";
+    role.textContent = "Vera";
+    var textDiv = document.createElement("div");
+    textDiv.className = "text";
+    bubble.appendChild(role);
+    bubble.appendChild(textDiv);
+    thread.appendChild(bubble);
+    thread.scrollTop = thread.scrollHeight;
+    var accumulated = "";
+    return {
+      appendChunk: function (chunkText) {
+        if (!chunkText) return;
+        if (accumulated.length > 0) accumulated += " ";
+        accumulated += chunkText;
+        textDiv.textContent = accumulated;
+        thread.scrollTop = thread.scrollHeight;
+      },
+      finalize: function () {
+        bubble.dataset.streaming = "0";
+        bubble.classList.remove("is-streaming");
+      },
+    };
+  }
+
   function applyDictationResult(payload) {
     // Render the thread and preview pane BEFORE touching state / TTS
     // so the text reply lands on the screen as soon as the server
@@ -331,10 +610,6 @@
     if (payload && Array.isArray(payload.turns)) {
       applyTurnsUpdate(payload.turns, payload.turn_count);
     }
-    // Refresh the active-preview pane from canonical session truth.
-    // ``payload.preview`` is ``read_session_preview``'d at the API
-    // layer so the pane stays at parity with typed /chat (full-page
-    // reload) without inferring state from the reply.
     if (payload && payload.has_preview_truth === true) {
       applyPreviewUpdate(payload.preview, payload.session_id);
     }
@@ -352,11 +627,7 @@
     if (payload.tts_url && audioEl) {
       audioEl.hidden = false;
       audioEl.src = payload.tts_url;
-      // Show the "Speaking reply…" state only while audio is
-      // actually loading / playing; once it ends or errors, fall
-      // back to the canonical status-derived state so the voice bar
-      // never gets stuck on a stale speaking label.
-      setState("Speaking reply\u2026");
+      setState("Speaking reply…");
       var resetState = function () {
         setState(deriveStateFromCanonicalStatus(payload));
       };
@@ -365,10 +636,6 @@
       var playPromise = audioEl.play();
       if (playPromise && typeof playPromise.catch === "function") {
         playPromise.catch(function () {
-          // Autoplay may be blocked by the browser; the <audio>
-          // element has controls, so the operator can press play.
-          // Fall back to the canonical status line so the bar does
-          // not stay on "Speaking reply…" when nothing is playing.
           resetState();
         });
       }
@@ -399,18 +666,11 @@
       return "Voice input rejected by runtime.";
     }
     if (payload && payload.preview) {
-      return "Preview drafted \u2014 review below.";
+      return "Preview drafted — review below.";
     }
     return "Idle";
   }
 
-  // Hand the canonical preview payload to the main page IIFE's
-  // preview-pane renderer (window.__veraApplyServerPreview) so dictated
-  // turns refresh the active-preview pane identically to a full-page
-  // typed reload.  The hook is exposed from the main IIFE; if it is
-  // unavailable (degraded page / older template), we skip silently so
-  // the fallback is "show what the server rendered on the last full
-  // navigation" — never a fabricated or inferred pane.
   function applyPreviewUpdate(preview, targetSessionId) {
     if (typeof window.__veraApplyServerPreview !== "function") return;
     try {
@@ -420,20 +680,12 @@
     }
   }
 
-  // Hand the canonical turns array to the main page IIFE's renderer
-  // (window.__veraApplyServerTurns) so assistant replies render with
-  // the SAME bounded markdown subset that typed replies use.  If the
-  // hook is missing (older page / no JS context), fall back to a
-  // plain escape-only render so the thread still updates truthfully.
   function applyTurnsUpdate(turns, turnCount) {
     if (typeof window.__veraApplyServerTurns === "function") {
       try {
         window.__veraApplyServerTurns(turns, turnCount);
         return;
       } catch (e) {
-        // Hook present but threw — surface the divergence so the
-        // escape-only fallback below isn't a silent drift from the
-        // main IIFE's bounded-markdown renderer.
         if (typeof console !== "undefined" && console.warn) {
           console.warn(
             "vera_dictation: __veraApplyServerTurns threw, " +
@@ -443,8 +695,6 @@
         }
       }
     } else if (typeof console !== "undefined" && console.warn) {
-      // Hook missing entirely — same divergence, different cause
-      // (older page, load-order race, etc.).
       console.warn(
         "vera_dictation: __veraApplyServerTurns missing, " +
           "falling back to escape-only renderer",

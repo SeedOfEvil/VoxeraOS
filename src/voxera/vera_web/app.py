@@ -2,19 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import re
 import secrets
 import tempfile
 import time
-from collections.abc import Awaitable
+from collections.abc import AsyncIterator, Awaitable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeVar
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -133,6 +134,7 @@ from ..voice.input import (
 )
 from ..voice.models import InputOrigin, normalize_input_origin
 from ..voice.output import synthesize_text_async, voice_output_status
+from ..voice.speech_chunking import split_speakable_chunks
 from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, stt_response_as_dict
 from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, tts_response_as_dict
 from .chat_early_exit_dispatch import dispatch_early_exit_intent
@@ -2213,6 +2215,597 @@ async def chat_voice(request: Request) -> JSONResponse:
     response = JSONResponse(payload)
     response.set_cookie("vera_session_id", result_session_id, httponly=False, samesite="lax")
     return response
+
+
+# ── Vera dictation streaming (canonical /chat/voice/stream) ────────
+# Incremental-reply counterpart to ``/chat/voice``.  Same STT → Vera →
+# (optional TTS) pipeline, but the response is a stream of NDJSON
+# events so the browser can:
+#
+#   * render the assistant reply incrementally as stable speakable
+#     chunks are emitted, instead of waiting for the whole reply to
+#     finish before anything appears in the thread;
+#   * start TTS playback from the first stable chunk rather than from
+#     a single whole-reply synthesis, which is the dominant source of
+#     time-to-first-speech on voice turns.
+#
+# Text remains authoritative: the full assistant text persisted into
+# the session is identical to the non-streaming endpoint, the ``done``
+# event carries the canonical turns / preview / full stage timings,
+# and any mid-stream TTS failure fails *soft* — prior chunks keep
+# playing, text stays visible, and subsequent failed chunks are
+# reported as ``audio_chunk_failed`` events instead of fabricating
+# audio URLs.  A client that cannot consume the stream can still fall
+# back to ``/chat/voice`` (the existing batch endpoint) without any
+# behaviour shift.
+#
+# Event shape (stable contract for the enhancer):
+#
+#   * ``ready``     — handshake; echoes session_id and initial stage
+#                     timings available before STT runs.
+#   * ``stt``       — STT result dict (same shape as ``/chat/voice``
+#                     ``stt`` field).  Emitted once.  On STT failure
+#                     the stream ends with a ``done`` event carrying
+#                     ``ok=false`` and no text/audio chunks.
+#   * ``reply_start`` — canonical chat helper returned; gives
+#                     ``reply_stream_start_ms`` (ms from request
+#                     start) so operators can see how long the LLM
+#                     phase took before any chunk shipped.  Does NOT
+#                     carry the assistant text yet so the browser
+#                     must render chunks progressively.
+#   * ``text_chunk`` — one stable speakable chunk of the reply.
+#                     ``index`` is 0-based and strictly increasing;
+#                     ``final`` is true on the last chunk.
+#   * ``audio_chunk`` — TTS audio ready for a chunk.  Carries
+#                     ``index`` (matches the corresponding
+#                     ``text_chunk``), ``audio_url`` (tokenized
+#                     ``/vera/voice/audio/<token>``), and per-chunk
+#                     ``chunk_tts_ms``.  The first successful audio
+#                     chunk also carries ``tts_first_chunk_ms`` and
+#                     ``first_stable_speech_chunk_ms``.
+#   * ``audio_chunk_failed`` — TTS failed for a chunk; carries
+#                     ``index``, ``error``, ``status``.  Playback
+#                     falls back to skipping the chunk rather than
+#                     fabricating audio.
+#   * ``done``      — terminal event.  Carries the full canonical
+#                     payload (turns, preview, has_preview_truth,
+#                     status, error, ok, full ``stage_timings`` dict,
+#                     ``assistant_text``, ``tts``, ``tts_url``,
+#                     ``chunk_count``).  Streams that error mid-way
+#                     still emit a final ``done`` with ``ok=false``
+#                     and truthful ``error`` text.
+#
+# NDJSON: one JSON object per line, terminated by ``\n``.  Media type
+# is ``application/x-ndjson``.  No SSE framing: clients read the body
+# with a ReadableStream and parse lines.
+
+
+@dataclass(frozen=True)
+class _StreamContext:
+    """Per-request state for the streaming voice pipeline.
+
+    Kept as a small dataclass instead of free-floating locals so the
+    nested helpers can pass it without juggling a dozen arguments.
+    Everything here is bounded and request-scoped; the context is
+    discarded when the stream closes.
+    """
+
+    request_started_at_ms: int
+    session_id: str
+    voice_flags: VoiceFoundationFlags
+    speak_response: bool
+    language: str | None
+
+
+def _elapsed_since(started_at_ms: int) -> int:
+    return max(0, int(time.time() * 1000) - started_at_ms)
+
+
+def _ndjson_line(payload: dict[str, object]) -> str:
+    """Serialize a single NDJSON event line.
+
+    ``separators`` + explicit ``\\n`` terminator keeps each event on
+    its own line so browsers can split on newline boundaries cheaply.
+    """
+    return json.dumps(payload, separators=(",", ":")) + "\n"
+
+
+@app.post("/chat/voice/stream")
+async def chat_voice_stream(request: Request) -> StreamingResponse:
+    """Streaming dictation endpoint — incremental reply + early-chunk TTS.
+
+    Same bounded audio contract as ``/chat/voice`` (audio/* content-
+    type, size cap, empty-body refusal) so every fail-closed gate
+    there also applies here.  The only difference is the response
+    shape: a stream of NDJSON events instead of a single JSON body.
+
+    See the module-level comment above for the event schema.
+    """
+    content_type_header = request.headers.get("content-type")
+    if not _is_audio_content_type(content_type_header):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Dictation upload requires an audio/* Content-Type.",
+        )
+
+    # Early Content-Length gate mirrors ``/chat/voice`` so the upload
+    # cap is consistent across both surfaces.
+    content_length_raw = request.headers.get("content-length")
+    if content_length_raw:
+        try:
+            advertised_length = int(content_length_raw)
+        except ValueError:
+            advertised_length = -1
+        if advertised_length > _VERA_DICTATION_MAX_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+                detail=f"Dictation upload exceeds {_VERA_DICTATION_MAX_BYTES} byte cap.",
+            )
+
+    qp = request.query_params
+    session_id_raw = str(qp.get("session_id") or "").strip()
+    language = str(qp.get("language") or "").strip() or None
+    speak_response_raw = str(qp.get("speak_response") or "").strip().lower()
+    speak_response = speak_response_raw in {"1", "true", "on", "yes"}
+    active_session = (
+        session_id_raw or (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
+    )
+
+    try:
+        voice_flags = load_voice_foundation_flags()
+    except Exception as exc:
+        flags_error_text = f"{type(exc).__name__}: {exc}"
+
+        async def _flags_failed() -> AsyncIterator[str]:
+            yield _ndjson_line(
+                {
+                    "event": "done",
+                    "ok": False,
+                    "status": "voice_flags_failed",
+                    "error": flags_error_text,
+                    "session_id": active_session,
+                    "stage_timings": {},
+                }
+            )
+
+        return StreamingResponse(_flags_failed(), media_type="application/x-ndjson")
+
+    if not voice_flags.voice_input_enabled:
+
+        async def _voice_disabled() -> AsyncIterator[str]:
+            yield _ndjson_line(
+                {
+                    "event": "done",
+                    "ok": False,
+                    "status": "voice_input_disabled",
+                    "error": "Voice input is disabled by runtime flags.",
+                    "session_id": active_session,
+                    "stage_timings": {},
+                }
+            )
+
+        return StreamingResponse(
+            _voice_disabled(),
+            media_type="application/x-ndjson",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    request_started_at_ms = int(time.time() * 1000)
+    raw_body = await request.body()
+    upload_ms = _elapsed_since(request_started_at_ms)
+    if not raw_body:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty dictation upload body.",
+        )
+    if len(raw_body) > _VERA_DICTATION_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            detail=f"Dictation upload exceeds {_VERA_DICTATION_MAX_BYTES} byte cap.",
+        )
+
+    suffix = _audio_suffix_for(content_type_header)
+    tmp_fd, tmp_path = tempfile.mkstemp(prefix=_VERA_DICTATION_TEMP_PREFIX, suffix=suffix)
+    temp_write_started_at_ms = int(time.time() * 1000)
+    try:
+        with os.fdopen(tmp_fd, "wb") as handle:
+            handle.write(raw_body)
+    except Exception:
+        with contextlib.suppress(OSError):
+            os.close(tmp_fd)
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
+        raise
+    temp_write_ms = _elapsed_since(temp_write_started_at_ms)
+
+    ctx = _StreamContext(
+        request_started_at_ms=request_started_at_ms,
+        session_id=active_session,
+        voice_flags=voice_flags,
+        speak_response=speak_response,
+        language=language,
+    )
+    generator = _run_voice_stream(
+        ctx=ctx,
+        tmp_path=tmp_path,
+        upload_ms=upload_ms,
+        temp_write_ms=temp_write_ms,
+    )
+    response = StreamingResponse(generator, media_type="application/x-ndjson")
+    response.set_cookie("vera_session_id", active_session, httponly=False, samesite="lax")
+    return response
+
+
+async def _run_voice_stream(
+    *,
+    ctx: _StreamContext,
+    tmp_path: str,
+    upload_ms: int,
+    temp_write_ms: int,
+) -> AsyncIterator[str]:
+    """Yield NDJSON events for one streaming dictation turn.
+
+    Keeps every write explicit and fail-soft:
+
+    * STT failure → final ``done`` with ``ok=false`` and no chunks.
+    * Chat-turn exception → final ``done`` with ``ok=false`` and the
+      exception class / message, but the assistant text already
+      persisted by any partial lane is not fabricated into a chunk.
+    * TTS failure on a chunk → per-chunk ``audio_chunk_failed`` event;
+      remaining chunks still try.
+    * Mid-stream exception inside the generator → best-effort terminal
+      ``done`` with ``ok=false`` so the client always sees a close
+      signal.
+
+    Skipped stage timings stay absent from the dict — absence is the
+    "did not run" signal, never a fabricated 0.
+    """
+    stage_timings: dict[str, int | None] = {
+        "upload_ms": upload_ms,
+        "temp_write_ms": temp_write_ms,
+        "stt_ms": None,
+        "vera_ms": None,
+        "vera_preview_builder_ms": None,
+        "vera_reply_ms": None,
+        "vera_enrichment_ms": None,
+        "reply_stream_start_ms": None,
+        "first_stable_speech_chunk_ms": None,
+        "tts_first_chunk_ms": None,
+        "tts_ms": None,
+        "total_tts_ms": None,
+        "total_ms": None,
+    }
+
+    try:
+        yield _ndjson_line(
+            {
+                "event": "ready",
+                "session_id": ctx.session_id,
+                "stage_timings": dict(stage_timings),
+            }
+        )
+
+        # ── STT ──────────────────────────────────────────────────
+        stt_ok = False
+        transcript_text: str | None = None
+        stt_dict: dict[str, object]
+        try:
+            start_ms = int(time.time() * 1000)
+            try:
+                stt_response = await transcribe_audio_file_async(
+                    audio_path=tmp_path,
+                    flags=ctx.voice_flags,
+                    language=ctx.language,
+                    session_id=ctx.session_id,
+                )
+            finally:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp_path)
+            elapsed_ms = _elapsed_since(start_ms)
+            stage_timings["stt_ms"] = elapsed_ms
+            stt_ok = bool(stt_response.status == STT_STATUS_SUCCEEDED and stt_response.transcript)
+            transcript_text = stt_response.transcript if stt_ok else None
+            stt_dict = {
+                "success": stt_ok,
+                "status": stt_response.status,
+                "display_status": _display_status_for_stt(stt_response.status, ok=stt_ok),
+                "transcript": transcript_text,
+                "language": stt_response.language if stt_ok else None,
+                "backend": stt_response.backend,
+                "error": stt_response.error if not stt_ok else None,
+                "error_class": stt_response.error_class if not stt_ok else None,
+                "audio_duration_ms": stt_response.audio_duration_ms,
+                "inference_ms": stt_response.inference_ms,
+                "elapsed_ms": elapsed_ms,
+                "request_id": stt_response.request_id,
+                "response_dict": stt_response_as_dict(stt_response),
+            }
+        except Exception as exc:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp_path)
+            stt_dict = {
+                "success": False,
+                "status": "failed",
+                "display_status": "failed",
+                "error": f"Unexpected error: {type(exc).__name__}: {exc}",
+            }
+
+        yield _ndjson_line({"event": "stt", "stt": stt_dict})
+
+        root = _active_queue_root()
+
+        if not stt_ok or not transcript_text:
+            stage_timings["total_ms"] = _elapsed_since(ctx.request_started_at_ms)
+            yield _ndjson_line(
+                {
+                    "event": "done",
+                    "ok": False,
+                    "session_id": ctx.session_id,
+                    "status": "stt_failed",
+                    "error": str(stt_dict.get("error") or ""),
+                    "turns": read_session_turns(root, ctx.session_id),
+                    "preview": read_session_preview(root, ctx.session_id),
+                    "has_preview_truth": True,
+                    "assistant_text": "",
+                    "stt": stt_dict,
+                    "tts": None,
+                    "tts_url": None,
+                    "speak_response_requested": ctx.speak_response,
+                    "stage_timings": dict(stage_timings),
+                    "chunk_count": 0,
+                }
+            )
+            return
+
+        # ── Canonical Vera chat turn ────────────────────────────
+        vera_started_at_ms = int(time.time() * 1000)
+        try:
+            chat_result = await run_vera_chat_turn(
+                message=transcript_text,
+                input_origin=InputOrigin.VOICE_TRANSCRIPT,
+                session_id=ctx.session_id,
+                voice_flags=ctx.voice_flags,
+            )
+        except Exception as exc:
+            stage_timings["vera_ms"] = _elapsed_since(vera_started_at_ms)
+            stage_timings["total_ms"] = _elapsed_since(ctx.request_started_at_ms)
+            yield _ndjson_line(
+                {
+                    "event": "done",
+                    "ok": False,
+                    "session_id": ctx.session_id,
+                    "status": "vera_error",
+                    "error": f"Unexpected error: {type(exc).__name__}: {exc}",
+                    "turns": read_session_turns(root, ctx.session_id),
+                    "preview": read_session_preview(root, ctx.session_id),
+                    "has_preview_truth": True,
+                    "assistant_text": "",
+                    "stt": stt_dict,
+                    "tts": None,
+                    "tts_url": None,
+                    "speak_response_requested": ctx.speak_response,
+                    "stage_timings": dict(stage_timings),
+                    "chunk_count": 0,
+                }
+            )
+            return
+        stage_timings["vera_ms"] = _elapsed_since(vera_started_at_ms)
+        for sub_key, sub_ms in chat_result.stage_timings.items():
+            if isinstance(sub_ms, int):
+                stage_timings[sub_key] = sub_ms
+
+        # Mark the moment the reply stream starts shipping events
+        # to the client.  This is the operator-visible "LLM done,
+        # now rendering" seam — before chunks begin flowing out.
+        stage_timings["reply_stream_start_ms"] = _elapsed_since(ctx.request_started_at_ms)
+        yield _ndjson_line(
+            {
+                "event": "reply_start",
+                "session_id": chat_result.session_id,
+                "status": chat_result.status,
+                "reply_stream_start_ms": stage_timings["reply_stream_start_ms"],
+            }
+        )
+
+        assistant_text = chat_result.assistant_text or ""
+        chunks = split_speakable_chunks(assistant_text)
+        if not chunks:
+            # No speakable content (empty reply / pure formatting).
+            # Emit an empty-chunk-count done so the client still
+            # gets a clean terminal event; text authority is
+            # preserved through the canonical turns field.
+            stage_timings["total_ms"] = _elapsed_since(ctx.request_started_at_ms)
+            yield _ndjson_line(
+                {
+                    "event": "done",
+                    "ok": True,
+                    "session_id": chat_result.session_id,
+                    "status": chat_result.status,
+                    "error": chat_result.error,
+                    "turns": chat_result.turns,
+                    "preview": chat_result.preview,
+                    "has_preview_truth": True,
+                    "assistant_text": assistant_text,
+                    "stt": stt_dict,
+                    "tts": None,
+                    "tts_url": None,
+                    "speak_response_requested": ctx.speak_response,
+                    "stage_timings": dict(stage_timings),
+                    "chunk_count": 0,
+                }
+            )
+            return
+
+        # First stable speech chunk is the head of the chunk list;
+        # we record this as soon as chunking returns.
+        stage_timings["first_stable_speech_chunk_ms"] = _elapsed_since(ctx.request_started_at_ms)
+
+        # Emit text chunks first so the UI can begin rendering the
+        # reply before any TTS completes.  Order is preserved so
+        # incremental rendering stays linear.
+        for index, chunk_text in enumerate(chunks):
+            is_final = index == len(chunks) - 1
+            yield _ndjson_line(
+                {
+                    "event": "text_chunk",
+                    "index": index,
+                    "text": chunk_text,
+                    "final": is_final,
+                }
+            )
+
+        first_tts_url: str | None = None
+        first_tts_status: str | None = None
+        total_tts_ms = 0
+        first_chunk_error: str | None = None
+        chunk_audio_failures = 0
+        if ctx.speak_response:
+            for index, chunk_text in enumerate(chunks):
+                try:
+                    chunk_start_ms = int(time.time() * 1000)
+                    tts_response = await synthesize_text_async(
+                        text=chunk_text,
+                        flags=ctx.voice_flags,
+                        session_id=ctx.session_id,
+                    )
+                    chunk_elapsed_ms = _elapsed_since(chunk_start_ms)
+                    total_tts_ms += chunk_elapsed_ms
+                    tts_ok = bool(
+                        tts_response.status == TTS_STATUS_SUCCEEDED and tts_response.audio_path
+                    )
+                    if tts_ok and tts_response.audio_path:
+                        token = _register_tts_audio(tts_response.audio_path)
+                        audio_url = f"/vera/voice/audio/{token}"
+                        event: dict[str, object] = {
+                            "event": "audio_chunk",
+                            "index": index,
+                            "audio_url": audio_url,
+                            "chunk_tts_ms": chunk_elapsed_ms,
+                            "status": tts_response.status,
+                            "backend": tts_response.backend,
+                            "audio_duration_ms": tts_response.audio_duration_ms,
+                        }
+                        if first_tts_url is None:
+                            first_tts_url = audio_url
+                            first_tts_status = tts_response.status
+                            stage_timings["tts_first_chunk_ms"] = _elapsed_since(
+                                ctx.request_started_at_ms
+                            )
+                            event["tts_first_chunk_ms"] = stage_timings["tts_first_chunk_ms"]
+                            event["first_stable_speech_chunk_ms"] = stage_timings[
+                                "first_stable_speech_chunk_ms"
+                            ]
+                        yield _ndjson_line(event)
+                    else:
+                        chunk_audio_failures += 1
+                        err_msg = tts_response.error or "TTS backend returned no audio artifact."
+                        if first_chunk_error is None and index == 0:
+                            first_chunk_error = err_msg
+                        yield _ndjson_line(
+                            {
+                                "event": "audio_chunk_failed",
+                                "index": index,
+                                "status": tts_response.status,
+                                "error": err_msg,
+                                "error_class": tts_response.error_class,
+                            }
+                        )
+                except ValueError as exc:
+                    chunk_audio_failures += 1
+                    err_msg = str(exc)
+                    if first_chunk_error is None and index == 0:
+                        first_chunk_error = err_msg
+                    yield _ndjson_line(
+                        {
+                            "event": "audio_chunk_failed",
+                            "index": index,
+                            "status": "failed",
+                            "error": err_msg,
+                            "error_class": "ValueError",
+                        }
+                    )
+                except Exception as exc:
+                    chunk_audio_failures += 1
+                    err_msg = f"Unexpected error: {type(exc).__name__}: {exc}"
+                    if first_chunk_error is None and index == 0:
+                        first_chunk_error = err_msg
+                    yield _ndjson_line(
+                        {
+                            "event": "audio_chunk_failed",
+                            "index": index,
+                            "status": "failed",
+                            "error": err_msg,
+                            "error_class": type(exc).__name__,
+                        }
+                    )
+            # total_tts_ms stays absent when no TTS attempts ran
+            # (speak_response=False).  When TTS did run, report the
+            # wall-clock sum across chunks so operators can see the
+            # whole synthesis cost, not just the first chunk.
+            stage_timings["total_tts_ms"] = total_tts_ms
+            stage_timings["tts_ms"] = total_tts_ms
+
+        tts_dict: dict[str, object] | None
+        if ctx.speak_response:
+            tts_dict = {
+                "success": first_tts_url is not None,
+                "status": first_tts_status or "failed",
+                "display_status": _display_status_for_tts(
+                    first_tts_status or "failed",
+                    ok=first_tts_url is not None,
+                ),
+                "first_chunk_error": first_chunk_error,
+                "chunk_count": len(chunks),
+                "audio_chunk_failures": chunk_audio_failures,
+            }
+        else:
+            tts_dict = None
+
+        stage_timings["total_ms"] = _elapsed_since(ctx.request_started_at_ms)
+        yield _ndjson_line(
+            {
+                "event": "done",
+                "ok": True,
+                "session_id": chat_result.session_id,
+                "status": chat_result.status,
+                "error": chat_result.error,
+                "turns": chat_result.turns,
+                "preview": chat_result.preview,
+                "has_preview_truth": True,
+                "assistant_text": assistant_text,
+                "stt": stt_dict,
+                "tts": tts_dict,
+                "tts_url": first_tts_url,
+                "speak_response_requested": ctx.speak_response,
+                "stage_timings": dict(stage_timings),
+                "chunk_count": len(chunks),
+            }
+        )
+    except Exception as exc:
+        # Defensive terminal event — if anything inside the
+        # generator raises unexpectedly, the client still sees a
+        # close signal instead of a hung stream.
+        stage_timings["total_ms"] = _elapsed_since(ctx.request_started_at_ms)
+        with contextlib.suppress(Exception):
+            yield _ndjson_line(
+                {
+                    "event": "done",
+                    "ok": False,
+                    "session_id": ctx.session_id,
+                    "status": "stream_error",
+                    "error": f"Unexpected error: {type(exc).__name__}: {exc}",
+                    "turns": [],
+                    "preview": None,
+                    "has_preview_truth": False,
+                    "assistant_text": "",
+                    "stt": None,
+                    "tts": None,
+                    "tts_url": None,
+                    "speak_response_requested": ctx.speak_response,
+                    "stage_timings": dict(stage_timings),
+                    "chunk_count": 0,
+                }
+            )
 
 
 @app.get("/vera/voice/audio/{token}")
