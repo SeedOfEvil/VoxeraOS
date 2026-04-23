@@ -348,18 +348,22 @@
   // a single event (see ``vera_web.app._run_voice_stream`` for the
   // schema).  The client:
   //
+  //   * inserts the user's voice-transcript bubble as soon as the
+  //     ``stt`` event lands, BEFORE any assistant progressive bubble
+  //     appears, so chat ordering never shows Vera replying to a
+  //     transcript the operator cannot see;
   //   * renders ``text_chunk`` events into a growing assistant
-  //     bubble so the operator sees the reply build up live;
+  //     bubble appended AFTER the user bubble;
   //   * queues ``audio_chunk`` URLs into an in-order playback queue
   //     that starts the moment the first chunk lands;
-  //   * swaps the progressive bubble for the canonical rendered
-  //     turns on ``done`` so markdown lands identically to typed
-  //     replies.
+  //   * swaps the progressive bubble + placeholder user bubble for
+  //     the canonical rendered turns on ``done`` so markdown lands
+  //     identically to typed replies.
   //
-  // Fails soft: a broken stream surfaces an error line and the partial
-  // rendered text stays on screen.  An init-time failure rejects the
-  // returned promise so ``uploadBlob`` can fall back to the batch
-  // endpoint without dropping the operator's turn.
+  // Fails soft: a broken stream surfaces an error line and the
+  // partial rendered text stays on screen.  An init-time failure
+  // rejects the returned promise so ``uploadBlob`` can fall back to
+  // the batch endpoint without dropping the operator's turn.
   function streamDictation(blob, mime, speakResponse) {
     var params = new URLSearchParams();
     if (sessionId) params.set("session_id", sessionId);
@@ -368,12 +372,25 @@
     var qs = params.toString();
     if (qs) url += "?" + qs;
 
-    var progressive = beginProgressiveAssistantBubble();
+    // Progressive assistant bubble is NOT created up front.  It is
+    // created lazily on the first text_chunk event, AFTER the user
+    // transcript bubble has been inserted on the stt event.  This
+    // guarantees correct conversation ordering on screen: user
+    // turn first, then Vera's reply.
+    var progressive = null;
+    var userTranscriptRendered = false;
     var audioQueue = [];
     var playing = false;
     var firstAudioPlayed = false;
     var anyEventSeen = false;
     var finalPayload = null;
+
+    function ensureProgressiveBubble() {
+      if (progressive === null) {
+        progressive = beginProgressiveAssistantBubble();
+      }
+      return progressive;
+    }
 
     function playNext() {
       if (playing) return;
@@ -393,10 +410,6 @@
         playNext();
       };
       var onErr = function () {
-        // A single chunk failing to play should NOT silence the
-        // rest of the reply — skip to the next chunk and keep
-        // going.  The assistant text is already visible, so the
-        // operator does not lose information.
         playing = false;
         audioEl.removeEventListener("ended", onEnd);
         audioEl.removeEventListener("error", onErr);
@@ -407,10 +420,6 @@
       var playPromise = audioEl.play();
       if (playPromise && typeof playPromise.catch === "function") {
         playPromise.catch(function () {
-          // Autoplay blocked — the element has controls so the
-          // operator can start playback.  Treat as "current chunk
-          // played" to unblock the queue; subsequent chunks will try
-          // again under the same policy.
           playing = false;
           audioEl.removeEventListener("ended", onEnd);
           audioEl.removeEventListener("error", onErr);
@@ -481,7 +490,23 @@
               return;
             }
             if (!evt || typeof evt.event !== "string") return;
-            if (evt.event === "ready" || evt.event === "stt") {
+            if (evt.event === "ready") return;
+            if (evt.event === "stt") {
+              // Render the user transcript bubble FIRST so the
+              // thread never shows Vera replying before the
+              // operator can see their own turn.  Only renders on
+              // STT success; on STT failure the stream will emit a
+              // terminal ``done`` with ok=false and no chunks.
+              var stt = evt.stt;
+              if (
+                stt &&
+                stt.success &&
+                typeof stt.transcript === "string" &&
+                stt.transcript.length > 0
+              ) {
+                appendUserTranscriptBubble(stt.transcript);
+                userTranscriptRendered = true;
+              }
               return;
             }
             if (evt.event === "reply_start") {
@@ -489,7 +514,12 @@
               return;
             }
             if (evt.event === "text_chunk") {
-              progressive.appendChunk(String(evt.text || ""));
+              // Lazy-create the progressive bubble so it always sits
+              // AFTER any user transcript bubble we inserted on the
+              // stt event.  If the stt event never rendered a user
+              // bubble (unusual edge case), the progressive bubble
+              // still lands at the end of the thread.
+              ensureProgressiveBubble().appendChunk(String(evt.text || ""));
               return;
             }
             if (evt.event === "audio_chunk") {
@@ -498,10 +528,6 @@
               return;
             }
             if (evt.event === "audio_chunk_failed") {
-              // No fabricated URL — just continue.  The reply text
-              // is already visible; the operator simply does not hear
-              // this chunk.  Later chunks may still synthesize and
-              // play.
               return;
             }
             if (evt.event === "done") {
@@ -518,7 +544,7 @@
             } else {
               setState("Idle");
               setError("Stream ended unexpectedly.");
-              progressive.finalize();
+              if (progressive) progressive.finalize();
             }
             resolve();
           }
@@ -533,6 +559,31 @@
           }
         });
     });
+  }
+
+  // Insert the user's voice-transcript bubble into the thread.  This
+  // is called the moment the ``stt`` event arrives so the user's
+  // turn is visible BEFORE Vera's progressive reply bubble appears.
+  // The canonical ``done`` event's ``turns`` array replaces this
+  // placeholder with the canonical server-rendered user turn, so any
+  // whitespace / normalisation differences are corrected at the end
+  // of the stream.
+  function appendUserTranscriptBubble(transcript) {
+    var thread = document.getElementById("thread");
+    if (!thread) return;
+    var bubble = document.createElement("article");
+    bubble.className = "bubble user is-streaming";
+    bubble.dataset.streaming = "1";
+    var role = document.createElement("div");
+    role.className = "role";
+    role.textContent = "You (voice transcript)";
+    var textDiv = document.createElement("div");
+    textDiv.className = "text";
+    textDiv.textContent = String(transcript);
+    bubble.appendChild(role);
+    bubble.appendChild(textDiv);
+    thread.appendChild(bubble);
+    thread.scrollTop = thread.scrollHeight;
   }
 
   // Snapshot-apply the canonical ``done`` payload over the progressive

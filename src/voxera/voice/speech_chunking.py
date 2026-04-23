@@ -1,30 +1,42 @@
 """Speakable chunk splitting for progressive TTS synthesis.
 
 Canonical Vera produces a single authoritative assistant reply text
-per turn.  For voice turns, synthesizing that whole reply as one TTS
+per turn.  For voice turns, synthesizing the whole reply as one TTS
 request delays the first spoken word by the full end-to-end TTS
-duration, even when local backends (Kokoro / Piper) are fast.  The
-fix is to synthesize speakable chunks one at a time, starting with
-the first stable sentence, so playback can begin while later chunks
-are still being produced.
+duration even when local backends (Kokoro / Piper) are fast.  But the
+naive opposite -- one TTS request per sentence -- produces a
+"line-by-line" cadence: each sentence gets its own utterance envelope
+with a perceptible pause between synthesis boundaries, so the reply
+no longer sounds like a single natural assistant voice.
 
-This module provides a single bounded helper,
-:func:`split_speakable_chunks`, that returns an ordered list of
-speakable chunks for a reply text.  The helper is deterministic,
-conservative, and purely a string transform -- it never paraphrases,
-summarizes, or deletes meaningful content.  The concatenation of all
-returned chunks, with a single space between them, is always a
-faithful restatement of the normalized input (no content loss).
+This module's strategy is therefore a **two-tier head/body split**:
+
+* The **head chunk** is small (typically one short sentence, or two
+  very short ones coalesced) so the first audio chunk ships quickly
+  and playback can begin while body chunks are still being produced.
+* The **body chunks** coalesce consecutive sentences until they reach
+  a natural-prosody target (~220 chars).  That gives the synthesizer
+  enough context for smoother intonation and fewer audible chunk
+  boundaries than the sentence-per-chunk approach.
+
+This preserves the latency benefit of early-chunk TTS (the first
+chunk still ships after roughly one sentence) while removing the
+"each sentence is its own utterance" feel for the rest of the reply.
+
+Public surface:
+
+* :func:`split_speakable_chunks` -- takes the canonical assistant
+  reply text and returns an ordered list of speakable chunks ready
+  for :func:`voxera.voice.speech_normalize.normalize_text_for_tts`.
 
 Non-negotiables enforced by this module:
 
 * The input string is never mutated in place.
 * The ordered list of returned chunks covers the entire input --
-  callers that speak the chunks in order and in full get the
-  complete reply.
+  callers that speak the chunks in order get the complete reply.
 * Empty / whitespace-only input returns ``[]``.
-* A reply that contains no clear sentence boundary is returned as a
-  single chunk -- callers fall back to whole-reply TTS cleanly.
+* A reply with no sentence terminator is returned as a single chunk
+  so the caller falls back to whole-reply TTS cleanly.
 
 Chunk boundary strategy:
 
@@ -33,26 +45,16 @@ Chunk boundary strategy:
    end a sentence, provided the preceding token is not a common
    abbreviation (``Dr.``, ``Mr.``, ``e.g.``, ``i.e.``, ``U.S.``,
    ``vs.``, ``etc.`` ...).  A trailing ``.`` at the very end of the
-   input also closes a chunk.
-2. **Clause boundary (bounded fallback).**  If a single sentence
+   input also closes a sentence.
+2. **Head/body coalescing.**  Consecutive sentences merge into one
+   chunk until the size target is reached (``_HEAD_CHUNK_MIN_CHARS``
+   for the first chunk, ``_BODY_CHUNK_TARGET_CHARS`` for the rest).
+   This is the core naturalness-preserving step.
+3. **Clause boundary (bounded fallback).**  If a single sentence
    exceeds :data:`_MAX_CHUNK_CHARS` (~400 chars), split on ``;`` or
    ``,`` followed by a coordinator (``and``, ``but``, ``or``, ``so``,
-   ``because``).  This is only used to tame runaway sentences so the
-   first chunk still ships to TTS quickly; we never split short
-   sentences mid-clause.
-3. **Minimum chunk size.**  Chunks shorter than
-   :data:`_MIN_CHUNK_CHARS` (~24 chars) are merged with the next
-   chunk so the synthesizer does not wake up for tiny "Yes.",
-   "Right." pulses that would add more overhead than they save.  The
-   last chunk is kept as-is regardless of size so a short final
-   sentence ("Done.") is still spoken.
-
-The returned chunks are speech-ready in the sense that they are
-already suitable for :func:`voxera.voice.speech_normalize.
-normalize_text_for_tts`; this helper does not normalize markdown
-itself (callers should run each chunk through the normalizer before
-handing it to the TTS backend -- see ``vera_web.app`` for the
-canonical call site).
+   ``because``) so one runaway sentence does not dominate TTS.  Short
+   sentences are never clause-split.
 """
 
 from __future__ import annotations
@@ -61,23 +63,31 @@ import re
 
 __all__ = ["split_speakable_chunks"]
 
-# Bounded chunk size envelope.  The max keeps one sentence from being
-# shipped as one giant TTS request; the min is kept small on purpose
-# because the product goal is "first spoken word ASAP" -- a terse
-# "Sure." or "Wait!" is a fully stable sentence and should reach TTS
-# immediately rather than being coalesced with whatever comes after.
-# ``_MIN_CHUNK_CHARS`` is the floor below which we *would* merge a
-# chunk with its neighbour; a value of ``1`` effectively disables the
-# coalescing pass while still filtering out empty strings produced by
-# a purely-formatting terminator run.
+# Head chunk ships early so playback can begin while body chunks are
+# still synthesizing.  ``_HEAD_CHUNK_MIN_CHARS`` is the minimum size
+# the head chunk must reach before we flush it; below this we coalesce
+# the next sentence in so terse heads ("Sure.", "OK.") do not ship as
+# their own TTS request with a jarring boundary.  ``_HEAD_CHUNK_MAX_CHARS``
+# is the upper guardrail -- we stop merging into the head once we hit
+# this size so it stays a "first breath" chunk, not a whole paragraph.
+_HEAD_CHUNK_MIN_CHARS = 40
+_HEAD_CHUNK_MAX_CHARS = 180
+
+# Body chunks coalesce sentences until they reach this length, which
+# gives the synthesizer enough prosody context to sound like a
+# continuous assistant voice rather than a staccato line-by-line
+# reader.  The final body chunk may fall short of this target if the
+# remaining content is small -- the last chunk is always emitted
+# regardless of size so no content is dropped.
+_BODY_CHUNK_TARGET_CHARS = 220
+
+# Absolute upper bound for any single chunk.  Oversized sentences are
+# clause-split to keep synthesis bounded; body chunks never exceed
+# this after coalescing because the coalescer stops merging once the
+# chunk is at or over the body target.
 _MAX_CHUNK_CHARS = 400
-_MIN_CHUNK_CHARS = 1
 
 # Common abbreviations whose trailing "." is NOT a sentence boundary.
-# Matching is case-insensitive on word boundaries.  Kept small and
-# conservative -- the cost of missing one is a slightly early chunk
-# split (still speakable); the cost of adding a bogus one is under-
-# chunking a long reply (slightly slower first speech).
 _ABBREVIATIONS: frozenset[str] = frozenset(
     {
         "dr",
@@ -115,22 +125,9 @@ _CLAUSE_SPLIT_RE = re.compile(
 
 
 def _is_real_sentence_end(text: str, match_start: int, terminator: str) -> bool:
-    """Return True when ``terminator`` at ``match_start`` ends a sentence.
-
-    Filters out abbreviation-style ``.`` endings like ``Dr.`` /
-    ``e.g.`` / ``U.S.`` where the next character is a space but the
-    preceding token is a known abbreviation or an initialism.
-    Compound terminators (``?!``, ``!!``) are always sentence ends
-    because no abbreviation uses them.
-    """
+    """Return True when ``terminator`` at ``match_start`` ends a sentence."""
     if terminator and any(ch in terminator for ch in "!?"):
         return True
-    # Look back at the word preceding the ``.`` to check for
-    # abbreviations / initialisms.  We collect trailing letters and
-    # remember whether we skipped any interior periods -- a period
-    # embedded in the preceding token (``e.g.`` / ``U.S.``) is a
-    # strong signal that the ``.`` at ``match_start`` is part of the
-    # same abbreviation, not a real sentence end.
     i = match_start - 1
     trailing: list[str] = []
     saw_interior_period = False
@@ -188,49 +185,52 @@ def _split_long_sentence(sentence: str) -> list[str]:
     tail = sentence[cursor:].strip()
     if tail:
         pieces.append(tail)
-    # If clause splitting yielded nothing, fall back to the whole
-    # sentence (better to speak a long chunk than to lose content).
     if not pieces:
         return [sentence]
-    # If any resulting piece is still too long, we accept it rather
-    # than chopping mid-phrase; the synthesizer will handle it.
     return pieces
 
 
-def _coalesce_short_chunks(chunks: list[str]) -> list[str]:
-    """Merge chunks below the minimum size with their neighbours.
+def _coalesce_for_naturalness(sentences: list[str]) -> list[str]:
+    """Coalesce sentences into a head chunk + natural-size body chunks.
 
-    Rules:
-    * A short chunk in the middle is merged with the next chunk.
-    * The last chunk is kept as-is regardless of size -- a short final
-      sentence ("Done.") must still be spoken.
-    * The merge inserts a single space so cadence is preserved.
+    * Head chunk (first emitted): ships once it reaches
+      ``_HEAD_CHUNK_MIN_CHARS``, capped at ``_HEAD_CHUNK_MAX_CHARS``
+      to keep time-to-first-audio small.
+    * Body chunks: coalesce subsequent sentences until the combined
+      text reaches ``_BODY_CHUNK_TARGET_CHARS``, then flush.  This
+      gives the synthesizer enough prosody context to sound like a
+      continuous voice rather than a one-sentence-per-utterance
+      reader.
+    * Trailing buffer: flushed as the final chunk regardless of size
+      so a terse closing sentence ("Done.") is still spoken.
     """
-    if not chunks:
+    if not sentences:
         return []
-    merged: list[str] = []
-    i = 0
-    while i < len(chunks):
-        current = chunks[i]
-        # If short and not the last, merge forward.
-        while len(current) < _MIN_CHUNK_CHARS and i + 1 < len(chunks):
-            nxt = chunks[i + 1]
-            current = f"{current} {nxt}".strip()
-            i += 1
-        merged.append(current)
-        i += 1
-    return merged
+    chunks: list[str] = []
+    buffer = ""
+    head_emitted = False
+
+    for sentence in sentences:
+        buffer = sentence if not buffer else f"{buffer} {sentence}"
+        target = _BODY_CHUNK_TARGET_CHARS if head_emitted else _HEAD_CHUNK_MIN_CHARS
+        hard_max = _MAX_CHUNK_CHARS if head_emitted else _HEAD_CHUNK_MAX_CHARS
+        if len(buffer) >= target or len(buffer) >= hard_max:
+            chunks.append(buffer)
+            buffer = ""
+            head_emitted = True
+    if buffer:
+        chunks.append(buffer)
+    return chunks
 
 
 def split_speakable_chunks(text: str) -> list[str]:
     """Return an ordered list of bounded speakable chunks for ``text``.
 
-    See module docstring for the full chunk boundary strategy.  Empty
-    or whitespace-only input returns ``[]`` (caller should fall back
-    to "no TTS this turn").  A reply with no clear sentence boundary
-    is returned as a single chunk so the caller can still synthesize
-    the whole reply rather than falsely claiming "no speakable
-    content".
+    See module docstring for the full strategy.  Empty / whitespace-
+    only input returns ``[]``.  A reply with no clear sentence
+    boundary returns a single chunk so the caller can still
+    synthesize the whole reply rather than falsely claiming "no
+    speakable content".
     """
     if not text:
         return []
@@ -240,14 +240,9 @@ def split_speakable_chunks(text: str) -> list[str]:
 
     sentences = _raw_sentence_split(trimmed)
     if not sentences:
-        # No terminators: single chunk (bounded fallback).  We do not
-        # clause-split here because the absence of any terminator in a
-        # short reply is the norm ("Sure.", "hi there") rather than an
-        # oversized runaway paragraph.
         return [trimmed]
 
     expanded: list[str] = []
     for sentence in sentences:
         expanded.extend(_split_long_sentence(sentence))
-    coalesced = _coalesce_short_chunks(expanded)
-    return [chunk for chunk in coalesced if chunk]
+    return [chunk for chunk in _coalesce_for_naturalness(expanded) if chunk]

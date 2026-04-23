@@ -138,12 +138,25 @@ def _parse_ndjson(body: str) -> list[dict[str, Any]]:
 
 
 def _multi_sentence_reply(**kwargs: Any) -> dict[str, Any]:
-    """Fake Vera reply with three sentences so chunking produces 3 chunks."""
+    """Fake Vera reply long enough that the naturalness-first
+    coalescer still produces multiple chunks.
+
+    The naturalness-first strategy merges consecutive sentences into
+    body chunks of ~220 chars, so a short 3-sentence reply now
+    collapses to 1-2 chunks.  For tests that need multi-chunk
+    behaviour we supply a reply of ~5 sentences and enough total
+    length that the body target is crossed at least once.
+    """
     return {
         "answer": (
             "The queue looks healthy this morning. "
-            "I checked the panel metrics and nothing stands out. "
-            "Let me know if you want me to inspect a specific service."
+            "I checked the panel metrics and nothing stands out at the "
+            "moment. "
+            "Let me know if you want me to inspect a specific service "
+            "more carefully. "
+            "I can also bundle the recent audit entries for you. "
+            "Either path stays read-only until you explicitly ask to "
+            "submit something through VoxeraOS."
         ),
         "status": "ok:test",
     }
@@ -155,6 +168,18 @@ async def _fake_vera_reply_multi(**kwargs: Any) -> dict[str, Any]:
 
 async def _fake_vera_reply_single(**kwargs: Any) -> dict[str, Any]:
     return {"answer": "Sure — done.", "status": "ok:test"}
+
+
+def _expected_multi_chunk_count() -> int:
+    """Number of chunks the multi-sentence fixture produces.
+
+    Computed via the real chunker so the test fixture and the chunk
+    expectation cannot drift out of sync when the coalescer tuning
+    changes.
+    """
+    from voxera.voice.speech_chunking import split_speakable_chunks
+
+    return len(split_speakable_chunks(_multi_sentence_reply()["answer"]))
 
 
 # =============================================================================
@@ -190,9 +215,12 @@ def test_stream_emits_events_in_documented_order_text_only(
     assert event_names[0] == "ready"
     assert event_names[1] == "stt"
     assert event_names[2] == "reply_start"
-    # Text chunks immediately after reply_start.
+    # Text chunks immediately after reply_start.  The multi-sentence
+    # fixture is tuned to produce at least 2 chunks under the
+    # naturalness-first coalescer (head + body).
     text_events = [e for e in events if e["event"] == "text_chunk"]
-    assert len(text_events) >= 3
+    assert len(text_events) >= 2
+    assert len(text_events) == _expected_multi_chunk_count()
     # No TTS events on text-only.
     assert not any(e["event"] == "audio_chunk" for e in events)
     assert not any(e["event"] == "audio_chunk_failed" for e in events)
@@ -374,12 +402,15 @@ def test_stream_tts_chunk_failure_is_truthful_and_continues(
     audio_events = [e for e in events if e["event"] == "audio_chunk"]
     failed_events = [e for e in events if e["event"] == "audio_chunk_failed"]
     text_events = [e for e in events if e["event"] == "text_chunk"]
-    # We got 2 successes + 1 failure across 3 chunks; indices cover 0..2.
-    assert len(text_events) == 3
-    assert len(audio_events) == 2
+    # Under the naturalness-first coalescer the fixture produces a
+    # bounded number of chunks (head + body).  Exactly one chunk
+    # (index 1) is forced to fail; every other chunk succeeds.
+    expected_count = _expected_multi_chunk_count()
+    assert expected_count >= 2, "fixture must produce multi-chunk output"
+    assert len(text_events) == expected_count
     assert len(failed_events) == 1
-    failed_index = failed_events[0]["index"]
-    assert failed_index == 1
+    assert len(audio_events) == expected_count - 1
+    assert failed_events[0]["index"] == 1
     # Done event still reports ok=true because the canonical chat
     # helper ran successfully; TTS failures never flip ok off.
     done = events[-1]
@@ -772,3 +803,76 @@ def test_dictation_enhancer_references_streaming_endpoint(
     # operator's turn cleanly.
     assert "postBatchDictation" in body
     assert "beginProgressiveAssistantBubble" in body
+
+
+def test_dictation_enhancer_renders_user_transcript_before_progressive(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression fence for the "assistant appears before user" bug.
+
+    Manual validation of the original PR found that the streaming
+    enhancer created the progressive assistant bubble immediately on
+    fetch, before the user's voice transcript was visible.  That
+    produced the wrong conversation order on screen ("Vera replying
+    to a transcript the operator cannot see").
+
+    The fix is in the client: the progressive bubble is
+    lazy-initialised via ``ensureProgressiveBubble`` and only
+    constructed when the first ``text_chunk`` event arrives -- AFTER
+    the ``stt`` event's ``appendUserTranscriptBubble`` call has
+    placed the user turn into the thread.  These string assertions
+    pin that contract so a future refactor that eagerly creates the
+    progressive bubble (before stt) would fail this test.
+    """
+    _set_queue_root(monkeypatch, tmp_path / "queue")
+    client = TestClient(vera_app_module.app)
+    res = client.get("/static/vera_dictation.js")
+    assert res.status_code == 200
+    body = res.text
+    # User transcript rendering helper is present and wired in the
+    # stt-event handler branch (not in a post-reply handler).
+    assert "appendUserTranscriptBubble" in body
+    # Progressive bubble is created lazily, not eagerly.  The lazy
+    # initialiser is the single call site that constructs the
+    # bubble; a caller that bypasses it would eager-create it again.
+    assert "ensureProgressiveBubble" in body
+    # Structural guarantee: the progressive-bubble factory is only
+    # invoked from inside ensureProgressiveBubble (and not at the
+    # top of streamDictation) so the ordering constraint cannot be
+    # violated by an eager call at fetch time.
+    begin_count = body.count("beginProgressiveAssistantBubble(")
+    # One definition call-site + one call from ensureProgressiveBubble = 2.
+    # Any additional call would indicate an eager pre-stt creation.
+    assert begin_count == 2, (
+        f"beginProgressiveAssistantBubble should be invoked exactly once "
+        f"(from ensureProgressiveBubble) and defined once; got {begin_count} "
+        f"occurrences, which suggests an eager pre-stt call was added back"
+    )
+
+
+def test_chunker_avoids_line_by_line_feel_on_medium_reply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression fence for the "sounds line-by-line" bug.
+
+    Manual validation of the original PR reported that TTS sounded
+    overly chunked because every sentence shipped as its own audio
+    chunk.  The naturalness-first coalescer must now produce strictly
+    fewer chunks than the sentence count for a typical medium reply
+    so spoken cadence has continuous prosody instead of one
+    utterance per sentence.
+    """
+    from voxera.voice.speech_chunking import split_speakable_chunks
+
+    medium_reply = _multi_sentence_reply()["answer"]
+    chunks = split_speakable_chunks(medium_reply)
+    # Count sentence terminators in the fixture as a proxy for
+    # sentence count.  The coalescer must produce strictly fewer
+    # chunks than sentences so the listener hears fewer synthesis
+    # boundaries.
+    sentence_count = sum(medium_reply.count(t) for t in ".!?")
+    assert sentence_count >= 5, "fixture must be a multi-sentence reply"
+    assert len(chunks) < sentence_count, (
+        f"chunker regressed to line-by-line: produced {len(chunks)} chunks "
+        f"for {sentence_count} sentences"
+    )
