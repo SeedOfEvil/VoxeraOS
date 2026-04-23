@@ -580,6 +580,172 @@ def test_stream_submit_still_routes_through_canonical_handoff(
 
 
 # =============================================================================
+# Hardening fences — catch regressions that would silently reintroduce
+# batch feel or break chunk ordering
+# =============================================================================
+
+
+def test_stream_sets_proxy_safe_headers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Streaming response advertises ``X-Accel-Buffering: no`` + ``no-cache``.
+
+    Without these, a reverse proxy (nginx in particular) may buffer the
+    entire NDJSON response, which silently regresses the product back
+    to batch feel even though the server is genuinely streaming.  The
+    headers are cheap defensive hints; this test prevents them from
+    being dropped in a future refactor.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply_single)
+    stt = _make_stt(transcript="hi")
+    with patch.object(
+        vera_app_module,
+        "transcribe_audio_file_async",
+        side_effect=_async_stt(stt),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_stream(client, params={"session_id": "stream-headers"})
+    assert res.status_code == 200
+    assert res.headers.get("x-accel-buffering") == "no"
+    cache_control = res.headers.get("cache-control", "").lower()
+    assert "no-cache" in cache_control or "no-transform" in cache_control
+
+
+def test_stream_text_chunks_join_matches_assistant_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Joining text_chunk payloads faithfully reproduces ``assistant_text``.
+
+    Text authority: the streamed chunks are the same content the
+    canonical chat helper produced.  If a future chunker regression
+    drops a sentence, the join-vs-assistant_text comparison catches
+    it at the endpoint boundary rather than leaving the operator
+    with silent text loss.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply_multi)
+    stt = _make_stt(transcript="tell me about the queue")
+    with patch.object(
+        vera_app_module,
+        "transcribe_audio_file_async",
+        side_effect=_async_stt(stt),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_stream(client, params={"session_id": "stream-faithful"})
+    events = _parse_ndjson(res.text)
+    text_events = [e for e in events if e["event"] == "text_chunk"]
+    done = events[-1]
+    joined = " ".join(str(e["text"]) for e in text_events).strip()
+    # The reply used in the fake has single-space separators between
+    # sentences; the joined chunks reproduce that exactly.
+    assert joined == done["assistant_text"].strip()
+    # The ``final`` flag is on the last chunk (and only the last).
+    assert text_events[-1]["final"] is True
+    assert all(not e["final"] for e in text_events[:-1])
+
+
+def test_stream_audio_chunk_order_stable_under_uneven_tts_latency(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Audio chunks are emitted in text order even when per-chunk TTS
+    durations vary wildly.
+
+    Regression fence: a future refactor that switches to
+    ``asyncio.gather(...)`` and yields as-done would silently reorder
+    audio events.  Here we make chunk 0's synthesis deliberately
+    slower than chunk 1's; the stream must still emit ``audio_chunk``
+    at index 0 before index 1 because sequential awaits are what
+    preserves playback order.  If indices ever arrive out of order,
+    this assertion fires.
+    """
+    import asyncio as _asyncio
+
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply_multi)
+
+    audio_paths = []
+    for i in range(3):
+        p = tmp_path / f"ordered_{i}.wav"
+        p.write_bytes(b"RIFF----WAVE" + b"\x00" * 32)
+        audio_paths.append(str(p))
+    call_index = {"n": 0}
+
+    async def _varied_tts(**_kwargs: Any) -> TTSResponse:
+        idx = call_index["n"]
+        call_index["n"] += 1
+        # Chunk 0 is deliberately slow; chunks 1+ are fast.  Under
+        # sequential awaiting the order remains 0, 1, 2.
+        if idx == 0:
+            await _asyncio.sleep(0.08)
+        else:
+            await _asyncio.sleep(0.01)
+        return _make_tts(audio_path=audio_paths[idx % len(audio_paths)])
+
+    stt = _make_stt(transcript="tell me about the queue")
+    with (
+        patch.object(
+            vera_app_module,
+            "transcribe_audio_file_async",
+            side_effect=_async_stt(stt),
+        ),
+        patch.object(
+            vera_app_module,
+            "synthesize_text_async",
+            side_effect=_varied_tts,
+        ),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_stream(
+            client,
+            params={"session_id": "stream-order", "speak_response": "1"},
+        )
+    events = _parse_ndjson(res.text)
+    audio_events = [e for e in events if e["event"] == "audio_chunk"]
+    assert [e["index"] for e in audio_events] == list(range(len(audio_events)))
+
+
+def test_stream_ready_event_carries_pre_stt_timings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The ``ready`` handshake reports the stages that have already run.
+
+    ``upload_ms`` and ``temp_write_ms`` are measured *before* the
+    generator begins, so they should always be present as
+    non-negative ints on the handshake — that is how operators can
+    see pre-STT cost on a slow network.  STT and later stages stay
+    ``None`` on ``ready`` because they have not happened yet.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply_single)
+    stt = _make_stt(transcript="hi")
+    with patch.object(
+        vera_app_module,
+        "transcribe_audio_file_async",
+        side_effect=_async_stt(stt),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_stream(client, params={"session_id": "stream-ready"})
+    events = _parse_ndjson(res.text)
+    assert events[0]["event"] == "ready"
+    timings = events[0]["stage_timings"]
+    assert isinstance(timings["upload_ms"], int)
+    assert timings["upload_ms"] >= 0
+    assert isinstance(timings["temp_write_ms"], int)
+    assert timings["temp_write_ms"] >= 0
+    # Stages that have not run are absent (None) — truthful handshake.
+    assert timings["stt_ms"] is None
+    assert timings["vera_ms"] is None
+    assert timings["tts_first_chunk_ms"] is None
+
+
+# =============================================================================
 # Enhancer JS references the streaming seam
 # =============================================================================
 

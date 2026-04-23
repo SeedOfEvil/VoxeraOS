@@ -2301,6 +2301,21 @@ def _elapsed_since(started_at_ms: int) -> int:
     return max(0, int(time.time() * 1000) - started_at_ms)
 
 
+# Streaming-dictation response headers.  ``X-Accel-Buffering: no``
+# tells reverse proxies (nginx in particular) to pass the response
+# body through to the client without buffering, which is essential
+# for NDJSON events to land incrementally.  ``Cache-Control`` pins
+# the stream as non-cacheable so intermediate caches cannot replay a
+# stale transcript.  Both headers are defensive -- the Vera web
+# service binds to 127.0.0.1 by default, but operators who front it
+# with a proxy (tested deployments include systemd-run + nginx) need
+# the hint so the streaming behaviour survives the path.
+_STREAMING_DICTATION_HEADERS: dict[str, str] = {
+    "X-Accel-Buffering": "no",
+    "Cache-Control": "no-cache, no-transform",
+}
+
+
 def _ndjson_line(payload: dict[str, object]) -> str:
     """Serialize a single NDJSON event line.
 
@@ -2431,7 +2446,11 @@ async def chat_voice_stream(request: Request) -> StreamingResponse:
         upload_ms=upload_ms,
         temp_write_ms=temp_write_ms,
     )
-    response = StreamingResponse(generator, media_type="application/x-ndjson")
+    response = StreamingResponse(
+        generator,
+        media_type="application/x-ndjson",
+        headers=_STREAMING_DICTATION_HEADERS,
+    )
     response.set_cookie("vera_session_id", active_session, httponly=False, samesite="lax")
     return response
 
