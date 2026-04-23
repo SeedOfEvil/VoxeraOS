@@ -134,7 +134,6 @@ from ..voice.input import (
 )
 from ..voice.models import InputOrigin, normalize_input_origin
 from ..voice.output import synthesize_text_async, voice_output_status
-from ..voice.speech_chunking import split_speakable_chunks
 from ..voice.stt_protocol import STT_STATUS_SUCCEEDED, stt_response_as_dict
 from ..voice.tts_protocol import TTS_STATUS_SUCCEEDED, tts_response_as_dict
 from .chat_early_exit_dispatch import dispatch_early_exit_intent
@@ -198,6 +197,7 @@ from .preview_content_binding import (
 from .preview_routing import (
     canonical_preview_lane_order,
 )
+from .progressive_text import split_progressive_text_chunks
 from .response_shaping import (
     BLANKET_PREVIEW_REFUSAL_TEXT,
     assemble_assistant_reply,
@@ -2301,6 +2301,16 @@ def _elapsed_since(started_at_ms: int) -> int:
     return max(0, int(time.time() * 1000) - started_at_ms)
 
 
+# Inter-chunk pacing delay for ``text_chunk`` events.  Without a
+# small ``await`` between yields the ASGI server flushes consecutive
+# text chunks in the same tick and the browser perceives the reply
+# "all at once" even though the stream is technically progressive.
+# ~60 ms produces a readable typing cadence without adding
+# objectionable latency: a 30-word reply paces out in about half a
+# second, well within the TTS window it overlaps with.
+_TEXT_CHUNK_EMIT_DELAY_S: float = 0.06
+
+
 # Streaming-dictation response headers.  ``X-Accel-Buffering: no``
 # tells reverse proxies (nginx in particular) to pass the response
 # body through to the client without buffering, which is essential
@@ -2627,8 +2637,8 @@ async def _run_voice_stream(
         )
 
         assistant_text = chat_result.assistant_text or ""
-        chunks = split_speakable_chunks(assistant_text)
-        if not chunks:
+        text_chunks = split_progressive_text_chunks(assistant_text)
+        if not text_chunks:
             # No speakable content (empty reply / pure formatting).
             # Emit an empty-chunk-count done so the client still
             # gets a clean terminal event; text authority is
@@ -2655,15 +2665,36 @@ async def _run_voice_stream(
             )
             return
 
-        # First stable speech chunk is the head of the chunk list;
-        # we record this as soon as chunking returns.
-        stage_timings["first_stable_speech_chunk_ms"] = _elapsed_since(ctx.request_started_at_ms)
+        # ── Single-file TTS, kicked off concurrently with text paces ──
+        # The upstream LLM call in ``run_vera_chat_turn`` is batch
+        # (no provider-token streaming), so ``text_chunk`` events are
+        # post-generation progressive rendering: the reply is already
+        # complete but is paced into small word-group chunks so the
+        # browser shows a visibly-typing effect.  TTS is synthesised
+        # as ONE full-reply audio file (not chunked) because chunked
+        # TTS produced a line-by-line cadence; a single Kokoro/Piper
+        # readout stays coherent.  Running the TTS task alongside the
+        # text pacing hides most of the synthesis cost behind the
+        # progressive-text window.
+        tts_task: asyncio.Task[object] | None = None
+        tts_started_at_ms: int | None = None
+        if ctx.speak_response:
+            tts_started_at_ms = int(time.time() * 1000)
+            tts_task = asyncio.create_task(
+                synthesize_text_async(
+                    text=assistant_text,
+                    flags=ctx.voice_flags,
+                    session_id=ctx.session_id,
+                )
+            )
 
-        # Emit text chunks first so the UI can begin rendering the
-        # reply before any TTS completes.  Order is preserved so
-        # incremental rendering stays linear.
-        for index, chunk_text in enumerate(chunks):
-            is_final = index == len(chunks) - 1
+        # Emit text chunks with a small pacing delay between each one
+        # so the browser can observe each landed event and repaint
+        # the progressive bubble.  Without the await between yields,
+        # the ASGI server flushes them in the same tick and the user
+        # perceives the reply "all at once".
+        for index, chunk_text in enumerate(text_chunks):
+            is_final = index == len(text_chunks) - 1
             yield _ndjson_line(
                 {
                     "event": "text_chunk",
@@ -2672,110 +2703,112 @@ async def _run_voice_stream(
                     "final": is_final,
                 }
             )
+            if not is_final:
+                await asyncio.sleep(_TEXT_CHUNK_EMIT_DELAY_S)
 
-        first_tts_url: str | None = None
-        first_tts_status: str | None = None
-        total_tts_ms = 0
-        first_chunk_error: str | None = None
-        chunk_audio_failures = 0
-        if ctx.speak_response:
-            for index, chunk_text in enumerate(chunks):
-                try:
-                    chunk_start_ms = int(time.time() * 1000)
-                    tts_response = await synthesize_text_async(
-                        text=chunk_text,
-                        flags=ctx.voice_flags,
-                        session_id=ctx.session_id,
-                    )
-                    chunk_elapsed_ms = _elapsed_since(chunk_start_ms)
-                    total_tts_ms += chunk_elapsed_ms
-                    tts_ok = bool(
-                        tts_response.status == TTS_STATUS_SUCCEEDED and tts_response.audio_path
-                    )
-                    if tts_ok and tts_response.audio_path:
-                        token = _register_tts_audio(tts_response.audio_path)
-                        audio_url = f"/vera/voice/audio/{token}"
-                        event: dict[str, object] = {
+        # ── Await the single concurrent TTS task ──
+        tts_url: str | None = None
+        tts_status: str | None = None
+        tts_first_chunk_error: str | None = None
+        audio_chunk_failed_count = 0
+        if tts_task is not None and tts_started_at_ms is not None:
+            try:
+                tts_response = await tts_task
+                tts_elapsed_ms = _elapsed_since(tts_started_at_ms)
+                stage_timings["tts_ms"] = tts_elapsed_ms
+                stage_timings["total_tts_ms"] = tts_elapsed_ms
+                # For a single-file TTS the "first stable speech
+                # chunk" is simply the only speech chunk; record the
+                # moment the audio artifact became available.
+                stage_timings["first_stable_speech_chunk_ms"] = _elapsed_since(
+                    ctx.request_started_at_ms
+                )
+                stage_timings["tts_first_chunk_ms"] = stage_timings["first_stable_speech_chunk_ms"]
+                tts_ok = bool(
+                    tts_response.status == TTS_STATUS_SUCCEEDED  # type: ignore[attr-defined]
+                    and tts_response.audio_path  # type: ignore[attr-defined]
+                )
+                tts_status = tts_response.status  # type: ignore[attr-defined]
+                if tts_ok and tts_response.audio_path:  # type: ignore[attr-defined]
+                    token = _register_tts_audio(tts_response.audio_path)  # type: ignore[attr-defined]
+                    tts_url = f"/vera/voice/audio/{token}"
+                    yield _ndjson_line(
+                        {
                             "event": "audio_chunk",
-                            "index": index,
-                            "audio_url": audio_url,
-                            "chunk_tts_ms": chunk_elapsed_ms,
-                            "status": tts_response.status,
-                            "backend": tts_response.backend,
-                            "audio_duration_ms": tts_response.audio_duration_ms,
-                        }
-                        if first_tts_url is None:
-                            first_tts_url = audio_url
-                            first_tts_status = tts_response.status
-                            stage_timings["tts_first_chunk_ms"] = _elapsed_since(
-                                ctx.request_started_at_ms
-                            )
-                            event["tts_first_chunk_ms"] = stage_timings["tts_first_chunk_ms"]
-                            event["first_stable_speech_chunk_ms"] = stage_timings[
+                            "index": 0,
+                            "audio_url": tts_url,
+                            "chunk_tts_ms": tts_elapsed_ms,
+                            "status": tts_response.status,  # type: ignore[attr-defined]
+                            "backend": tts_response.backend,  # type: ignore[attr-defined]
+                            "audio_duration_ms": tts_response.audio_duration_ms,  # type: ignore[attr-defined]
+                            "tts_first_chunk_ms": stage_timings["tts_first_chunk_ms"],
+                            "first_stable_speech_chunk_ms": stage_timings[
                                 "first_stable_speech_chunk_ms"
-                            ]
-                        yield _ndjson_line(event)
-                    else:
-                        chunk_audio_failures += 1
-                        err_msg = tts_response.error or "TTS backend returned no audio artifact."
-                        if first_chunk_error is None and index == 0:
-                            first_chunk_error = err_msg
-                        yield _ndjson_line(
-                            {
-                                "event": "audio_chunk_failed",
-                                "index": index,
-                                "status": tts_response.status,
-                                "error": err_msg,
-                                "error_class": tts_response.error_class,
-                            }
-                        )
-                except ValueError as exc:
-                    chunk_audio_failures += 1
-                    err_msg = str(exc)
-                    if first_chunk_error is None and index == 0:
-                        first_chunk_error = err_msg
+                            ],
+                        }
+                    )
+                else:
+                    audio_chunk_failed_count = 1
+                    tts_first_chunk_error = (
+                        tts_response.error  # type: ignore[attr-defined]
+                        or "TTS backend returned no audio artifact."
+                    )
                     yield _ndjson_line(
                         {
                             "event": "audio_chunk_failed",
-                            "index": index,
-                            "status": "failed",
-                            "error": err_msg,
-                            "error_class": "ValueError",
+                            "index": 0,
+                            "status": tts_response.status,  # type: ignore[attr-defined]
+                            "error": tts_first_chunk_error,
+                            "error_class": tts_response.error_class,  # type: ignore[attr-defined]
                         }
                     )
-                except Exception as exc:
-                    chunk_audio_failures += 1
-                    err_msg = f"Unexpected error: {type(exc).__name__}: {exc}"
-                    if first_chunk_error is None and index == 0:
-                        first_chunk_error = err_msg
-                    yield _ndjson_line(
-                        {
-                            "event": "audio_chunk_failed",
-                            "index": index,
-                            "status": "failed",
-                            "error": err_msg,
-                            "error_class": type(exc).__name__,
-                        }
-                    )
-            # total_tts_ms stays absent when no TTS attempts ran
-            # (speak_response=False).  When TTS did run, report the
-            # wall-clock sum across chunks so operators can see the
-            # whole synthesis cost, not just the first chunk.
-            stage_timings["total_tts_ms"] = total_tts_ms
-            stage_timings["tts_ms"] = total_tts_ms
+            except ValueError as exc:
+                audio_chunk_failed_count = 1
+                tts_first_chunk_error = str(exc)
+                tts_status = "failed"
+                stage_timings["tts_ms"] = _elapsed_since(tts_started_at_ms)
+                stage_timings["total_tts_ms"] = stage_timings["tts_ms"]
+                yield _ndjson_line(
+                    {
+                        "event": "audio_chunk_failed",
+                        "index": 0,
+                        "status": "failed",
+                        "error": tts_first_chunk_error,
+                        "error_class": "ValueError",
+                    }
+                )
+            except Exception as exc:
+                audio_chunk_failed_count = 1
+                tts_first_chunk_error = f"Unexpected error: {type(exc).__name__}: {exc}"
+                tts_status = "failed"
+                stage_timings["tts_ms"] = _elapsed_since(tts_started_at_ms)
+                stage_timings["total_tts_ms"] = stage_timings["tts_ms"]
+                yield _ndjson_line(
+                    {
+                        "event": "audio_chunk_failed",
+                        "index": 0,
+                        "status": "failed",
+                        "error": tts_first_chunk_error,
+                        "error_class": type(exc).__name__,
+                    }
+                )
 
         tts_dict: dict[str, object] | None
         if ctx.speak_response:
             tts_dict = {
-                "success": first_tts_url is not None,
-                "status": first_tts_status or "failed",
+                "success": tts_url is not None,
+                "status": tts_status or "failed",
                 "display_status": _display_status_for_tts(
-                    first_tts_status or "failed",
-                    ok=first_tts_url is not None,
+                    tts_status or "failed",
+                    ok=tts_url is not None,
                 ),
-                "first_chunk_error": first_chunk_error,
-                "chunk_count": len(chunks),
-                "audio_chunk_failures": chunk_audio_failures,
+                "first_chunk_error": tts_first_chunk_error,
+                # ``chunk_count`` on the TTS dict reports how many
+                # audio chunks were produced -- with single-file TTS
+                # this is always 1 (or 0 on failure), independent of
+                # the text-chunk count.
+                "chunk_count": 1 if tts_url is not None else 0,
+                "audio_chunk_failures": audio_chunk_failed_count,
             }
         else:
             tts_dict = None
@@ -2794,10 +2827,15 @@ async def _run_voice_stream(
                 "assistant_text": assistant_text,
                 "stt": stt_dict,
                 "tts": tts_dict,
-                "tts_url": first_tts_url,
+                "tts_url": tts_url,
                 "speak_response_requested": ctx.speak_response,
                 "stage_timings": dict(stage_timings),
-                "chunk_count": len(chunks),
+                # ``chunk_count`` on the terminal event reports the
+                # text-chunk count so operators can see how
+                # progressive the UI render actually was.  TTS chunk
+                # count is always 1 (single-file) and is reported
+                # inside ``tts`` above.
+                "chunk_count": len(text_chunks),
             }
         )
     except Exception as exc:

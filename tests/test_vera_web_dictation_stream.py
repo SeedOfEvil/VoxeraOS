@@ -171,15 +171,18 @@ async def _fake_vera_reply_single(**kwargs: Any) -> dict[str, Any]:
 
 
 def _expected_multi_chunk_count() -> int:
-    """Number of chunks the multi-sentence fixture produces.
+    """Number of UI text chunks the multi-sentence fixture produces.
 
-    Computed via the real chunker so the test fixture and the chunk
-    expectation cannot drift out of sync when the coalescer tuning
-    changes.
+    Progressive UI chunks are word-group granular (see
+    ``voxera.vera_web.progressive_text.split_progressive_text_chunks``)
+    so a multi-sentence fixture produces many small chunks for the
+    visibly-typing effect.  Computed via the real chunker so the
+    fixture and the chunk expectation cannot drift out of sync when
+    the word-group tuning changes.
     """
-    from voxera.voice.speech_chunking import split_speakable_chunks
+    from voxera.vera_web.progressive_text import split_progressive_text_chunks
 
-    return len(split_speakable_chunks(_multi_sentence_reply()["answer"]))
+    return len(split_progressive_text_chunks(_multi_sentence_reply()["answer"]))
 
 
 # =============================================================================
@@ -271,36 +274,29 @@ def test_stream_text_chunks_are_ordered_and_faithful(
         assert keyword in done["assistant_text"]
 
 
-def test_stream_with_tts_emits_audio_chunks_in_order(
+def test_stream_with_tts_emits_single_audio_chunk(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``speak_response=1``: one ``audio_chunk`` per text chunk, in order.
+    """``speak_response=1``: TTS is now single-file.
 
-    The first audio chunk carries ``tts_first_chunk_ms`` and
-    ``first_stable_speech_chunk_ms``; later chunks do not.  The
-    ``done`` event reports ``total_tts_ms`` as the sum of per-chunk
-    synthesis.  ``tts_url`` on ``done`` points at the first chunk's
-    registered artifact so legacy consumers see the same handle the
-    batch endpoint produces.
+    Chunked TTS previously produced a line-by-line cadence; we
+    reverted to one coherent full-reply synthesis.  No matter how
+    many progressive ``text_chunk`` events fire, exactly one
+    ``audio_chunk`` event is emitted with the full-reply audio URL,
+    and it carries the first/only chunk timings.
     """
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
     _force_enabled_voice(monkeypatch)
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply_multi)
 
-    # Three distinct audio files so the registry resolves distinct tokens.
-    audio_paths = []
-    for i in range(3):
-        p = tmp_path / f"chunk_{i}.wav"
-        p.write_bytes(b"RIFF----WAVE" + b"\x00" * 32)
-        audio_paths.append(str(p))
-
-    call_index = {"n": 0}
+    audio_path = tmp_path / "full_reply.wav"
+    audio_path.write_bytes(b"RIFF----WAVE" + b"\x00" * 32)
+    call_count = {"n": 0}
 
     async def _fake_tts(**_kwargs: Any) -> TTSResponse:
-        idx = call_index["n"]
-        call_index["n"] += 1
-        return _make_tts(audio_path=audio_paths[idx % len(audio_paths)])
+        call_count["n"] += 1
+        return _make_tts(audio_path=str(audio_path))
 
     stt = _make_stt(transcript="tell me about the queue")
     with (
@@ -324,61 +320,55 @@ def test_stream_with_tts_emits_audio_chunks_in_order(
     events = _parse_ndjson(res.text)
     audio_events = [e for e in events if e["event"] == "audio_chunk"]
     text_events = [e for e in events if e["event"] == "text_chunk"]
-    assert len(audio_events) == len(text_events)
-    # Ordering: indices strictly increasing, matching text chunks.
-    assert [e["index"] for e in audio_events] == list(range(len(audio_events)))
-    # First chunk carries the first-chunk timings.
+    # Single-file TTS: exactly one TTS call, exactly one audio_chunk
+    # event, regardless of how many progressive text chunks fired.
+    assert call_count["n"] == 1
+    assert len(audio_events) == 1
+    # Progressive text rendering is word-group granular -- several
+    # chunks for a typical reply so the UI visibly types.
+    assert len(text_events) > len(audio_events)
+    assert audio_events[0]["index"] == 0
+    # Single chunk carries the first-chunk timings; there are no
+    # later chunks to compare against.
     assert "tts_first_chunk_ms" in audio_events[0]
     assert "first_stable_speech_chunk_ms" in audio_events[0]
-    assert audio_events[0]["tts_first_chunk_ms"] >= 0
-    # Later chunks do not re-carry the first-chunk timings (avoid
-    # misleading "first chunk ready" claims on every event).
-    for later in audio_events[1:]:
-        assert "tts_first_chunk_ms" not in later
-    # Each audio event has a URL pointing at /vera/voice/audio/<token>.
-    for e in audio_events:
-        assert e["audio_url"].startswith("/vera/voice/audio/")
-    # Done event carries first chunk url as tts_url and truthful timings.
+    assert audio_events[0]["audio_url"].startswith("/vera/voice/audio/")
+    # Done event: tts_url matches the one audio chunk and tts dict
+    # reports chunk_count=1 (single-file).
     done = events[-1]
     assert done["event"] == "done"
     assert done["ok"] is True
     assert done["tts_url"] == audio_events[0]["audio_url"]
+    assert done["tts"]["chunk_count"] == 1
+    assert done["tts"]["audio_chunk_failures"] == 0
     timings = done["stage_timings"]
     assert isinstance(timings["tts_first_chunk_ms"], int)
     assert isinstance(timings["first_stable_speech_chunk_ms"], int)
     assert isinstance(timings["total_tts_ms"], int)
-    # First chunk ready must be <= total wall-clock (and typically
-    # much less, because only one chunk's TTS has completed).
     assert timings["tts_first_chunk_ms"] <= timings["total_ms"]
 
 
 def test_stream_tts_chunk_failure_is_truthful_and_continues(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A failed chunk produces ``audio_chunk_failed``; later chunks still try.
+    """Full-reply TTS failure emits exactly one ``audio_chunk_failed``.
 
-    This pins the fallback-safety rule: one broken chunk must not
-    silence the rest of the reply or fabricate a URL.  Text is
-    already visible, so the operator still gets the full answer
-    even if one chunk's audio was lost.
+    Since TTS is now single-file, a failure produces one failed
+    event (no surviving audio chunks, no fabricated URL).  Text
+    chunks are unaffected because they emit before TTS completes,
+    so the operator still sees the full written reply and ``ok``
+    stays ``True`` (text authority is preserved).
     """
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
     _force_enabled_voice(monkeypatch)
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply_multi)
 
-    good_audio = tmp_path / "good.wav"
-    good_audio.write_bytes(b"RIFF----WAVE" + b"\x00" * 32)
-
-    call_index = {"n": 0}
+    call_count = {"n": 0}
 
     async def _fake_tts(**_kwargs: Any) -> TTSResponse:
-        idx = call_index["n"]
-        call_index["n"] += 1
-        # Fail the middle chunk only.
-        if idx == 1:
-            return _make_tts(status="failed", audio_path=None)
-        return _make_tts(audio_path=str(good_audio))
+        call_count["n"] += 1
+        return _make_tts(status="failed", audio_path=None)
 
     stt = _make_stt(transcript="tell me about the queue")
     with (
@@ -402,21 +392,21 @@ def test_stream_tts_chunk_failure_is_truthful_and_continues(
     audio_events = [e for e in events if e["event"] == "audio_chunk"]
     failed_events = [e for e in events if e["event"] == "audio_chunk_failed"]
     text_events = [e for e in events if e["event"] == "text_chunk"]
-    # Under the naturalness-first coalescer the fixture produces a
-    # bounded number of chunks (head + body).  Exactly one chunk
-    # (index 1) is forced to fail; every other chunk succeeds.
-    expected_count = _expected_multi_chunk_count()
-    assert expected_count >= 2, "fixture must produce multi-chunk output"
-    assert len(text_events) == expected_count
+    # Single-file TTS: one synthesize call, one failed event, no
+    # successful audio_chunk events.
+    assert call_count["n"] == 1
+    assert len(audio_events) == 0
     assert len(failed_events) == 1
-    assert len(audio_events) == expected_count - 1
-    assert failed_events[0]["index"] == 1
-    # Done event still reports ok=true because the canonical chat
-    # helper ran successfully; TTS failures never flip ok off.
+    assert failed_events[0]["index"] == 0
+    # Text chunks still flowed (progressive render is independent of
+    # TTS success) — text authority is preserved even when speech fails.
+    assert len(text_events) >= 1
     done = events[-1]
     assert done["ok"] is True
     assert done["tts"]["audio_chunk_failures"] == 1
-    # Failed chunk event carries truthful error + status (no fabrication).
+    assert done["tts"]["success"] is False
+    assert done["tts"]["chunk_count"] == 0
+    assert done["tts_url"] is None
     assert failed_events[0]["error"]
     assert failed_events[0]["status"]
 
@@ -678,44 +668,28 @@ def test_stream_text_chunks_join_matches_assistant_text(
     assert all(not e["final"] for e in text_events[:-1])
 
 
-def test_stream_audio_chunk_order_stable_under_uneven_tts_latency(
+def test_stream_text_chunks_flow_before_audio_chunk(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Audio chunks are emitted in text order even when per-chunk TTS
-    durations vary wildly.
+    """``text_chunk`` events all precede the terminal ``audio_chunk``.
 
-    Regression fence: a future refactor that switches to
-    ``asyncio.gather(...)`` and yields as-done would silently reorder
-    audio events.  Here we make chunk 0's synthesis deliberately
-    slower than chunk 1's; the stream must still emit ``audio_chunk``
-    at index 0 before index 1 because sequential awaits are what
-    preserves playback order.  If indices ever arrive out of order,
-    this assertion fires.
+    The progressive UI render depends on this ordering: the browser
+    must see every text chunk (and update the assistant bubble) BEFORE
+    the final single-file audio chunk can arrive.  Pinning this
+    guards against a future refactor that awaits the TTS task before
+    pacing text chunks -- which would re-introduce the "all at once"
+    batch feel.
     """
-    import asyncio as _asyncio
-
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
     _force_enabled_voice(monkeypatch)
     monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply_multi)
 
-    audio_paths = []
-    for i in range(3):
-        p = tmp_path / f"ordered_{i}.wav"
-        p.write_bytes(b"RIFF----WAVE" + b"\x00" * 32)
-        audio_paths.append(str(p))
-    call_index = {"n": 0}
+    audio_path = tmp_path / "paced.wav"
+    audio_path.write_bytes(b"RIFF----WAVE" + b"\x00" * 32)
 
-    async def _varied_tts(**_kwargs: Any) -> TTSResponse:
-        idx = call_index["n"]
-        call_index["n"] += 1
-        # Chunk 0 is deliberately slow; chunks 1+ are fast.  Under
-        # sequential awaiting the order remains 0, 1, 2.
-        if idx == 0:
-            await _asyncio.sleep(0.08)
-        else:
-            await _asyncio.sleep(0.01)
-        return _make_tts(audio_path=audio_paths[idx % len(audio_paths)])
+    async def _fake_tts(**_kwargs: Any) -> TTSResponse:
+        return _make_tts(audio_path=str(audio_path))
 
     stt = _make_stt(transcript="tell me about the queue")
     with (
@@ -727,7 +701,7 @@ def test_stream_audio_chunk_order_stable_under_uneven_tts_latency(
         patch.object(
             vera_app_module,
             "synthesize_text_async",
-            side_effect=_varied_tts,
+            side_effect=_fake_tts,
         ),
     ):
         client = TestClient(vera_app_module.app)
@@ -736,8 +710,25 @@ def test_stream_audio_chunk_order_stable_under_uneven_tts_latency(
             params={"session_id": "stream-order", "speak_response": "1"},
         )
     events = _parse_ndjson(res.text)
-    audio_events = [e for e in events if e["event"] == "audio_chunk"]
-    assert [e["index"] for e in audio_events] == list(range(len(audio_events)))
+    # Walk the event stream in arrival order.  Every ``text_chunk``
+    # must appear before the single ``audio_chunk`` (or
+    # ``audio_chunk_failed``) event.  This is the concrete ordering
+    # invariant behind "progressive text renders before audio
+    # arrives".
+    audio_seen_at: int | None = None
+    text_after_audio: list[dict[str, Any]] = []
+    text_before_audio_count = 0
+    for idx, evt in enumerate(events):
+        if evt["event"] in ("audio_chunk", "audio_chunk_failed"):
+            audio_seen_at = idx
+        elif evt["event"] == "text_chunk":
+            if audio_seen_at is None:
+                text_before_audio_count += 1
+            else:
+                text_after_audio.append(evt)
+    assert audio_seen_at is not None, "single-file TTS should emit one audio event"
+    assert text_after_audio == [], "text_chunk must never arrive after audio_chunk"
+    assert text_before_audio_count >= 1
 
 
 def test_stream_ready_event_carries_pre_stt_timings(
@@ -850,29 +841,99 @@ def test_dictation_enhancer_renders_user_transcript_before_progressive(
     )
 
 
-def test_chunker_avoids_line_by_line_feel_on_medium_reply(
+def test_stream_emits_text_chunks_with_async_pacing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Regression fence for the "sounds line-by-line" bug.
+    """Inter-chunk ``await asyncio.sleep`` produces measurable wall-clock
+    spacing between paced ``text_chunk`` emits.
 
-    Manual validation of the original PR reported that TTS sounded
-    overly chunked because every sentence shipped as its own audio
-    chunk.  The naturalness-first coalescer must now produce strictly
-    fewer chunks than the sentence count for a typical medium reply
-    so spoken cadence has continuous prosody instead of one
-    utterance per sentence.
+    Without a small async pause between yields, the ASGI server
+    flushes consecutive ``text_chunk`` events in the same tick and
+    the browser perceives the reply "all at once".  This test
+    patches ``asyncio.sleep`` inside the app module so each sleep
+    call is counted, then confirms the stream called ``asyncio.sleep``
+    at least once per inter-chunk gap in a multi-chunk reply.
     """
-    from voxera.voice.speech_chunking import split_speakable_chunks
+    import asyncio as _asyncio
 
-    medium_reply = _multi_sentence_reply()["answer"]
-    chunks = split_speakable_chunks(medium_reply)
-    # Count sentence terminators in the fixture as a proxy for
-    # sentence count.  The coalescer must produce strictly fewer
-    # chunks than sentences so the listener hears fewer synthesis
-    # boundaries.
-    sentence_count = sum(medium_reply.count(t) for t in ".!?")
-    assert sentence_count >= 5, "fixture must be a multi-sentence reply"
-    assert len(chunks) < sentence_count, (
-        f"chunker regressed to line-by-line: produced {len(chunks)} chunks "
-        f"for {sentence_count} sentences"
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply_multi)
+
+    real_sleep = _asyncio.sleep
+    sleep_calls: list[float] = []
+
+    async def _counting_sleep(delay: float) -> None:
+        sleep_calls.append(delay)
+        # Keep the real (tiny) delay so the generator yields to
+        # the event loop as it would in production.
+        await real_sleep(0)
+
+    # Patch the asyncio module reference used inside vera_web.app so
+    # the stream generator's ``asyncio.sleep(...)`` calls route to
+    # our counter.  A top-level patch on ``_asyncio.sleep`` would
+    # also trip other async machinery, so we patch via the app
+    # module's attribute lookup.
+    monkeypatch.setattr(vera_app_module.asyncio, "sleep", _counting_sleep)
+    stt = _make_stt(transcript="tell me about the queue")
+    with patch.object(
+        vera_app_module,
+        "transcribe_audio_file_async",
+        side_effect=_async_stt(stt),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_stream(client, params={"session_id": "stream-paced"})
+    events = _parse_ndjson(res.text)
+    text_events = [e for e in events if e["event"] == "text_chunk"]
+    assert len(text_events) >= 2
+    # One sleep per inter-chunk gap: N text chunks -> N-1 paced gaps.
+    # Every observed sleep must be the non-zero pacing delay so a
+    # future refactor that passes ``delay=0`` would fail here.
+    paced_gaps = [
+        d for d in sleep_calls if abs(d - vera_app_module._TEXT_CHUNK_EMIT_DELAY_S) < 1e-6
+    ]
+    assert len(paced_gaps) >= len(text_events) - 1, (
+        f"expected >= {len(text_events) - 1} paced sleeps, got "
+        f"{len(paced_gaps)} (all sleep calls: {sleep_calls!r})"
+    )
+    # Delay constant is non-zero so the pacing is real, not a no-op.
+    assert vera_app_module._TEXT_CHUNK_EMIT_DELAY_S > 0
+
+
+def test_stream_produces_many_progressive_text_chunks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression fence for the "reply arrives all at once" bug.
+
+    Progressive UI chunking must produce materially more than 2
+    chunks for a typical multi-sentence reply so the browser
+    actually shows a visibly typing effect.  The previous sentence-
+    level chunker produced 1-2 chunks for the same fixture, which
+    flushed back-to-back and felt like the full reply landed in one
+    tick.  Word-group chunking keeps chunks small and the stream
+    endpoint paces them with ``await asyncio.sleep`` between emits.
+    """
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    _force_enabled_voice(monkeypatch)
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_vera_reply_multi)
+    stt = _make_stt(transcript="tell me about the queue")
+    with patch.object(
+        vera_app_module,
+        "transcribe_audio_file_async",
+        side_effect=_async_stt(stt),
+    ):
+        client = TestClient(vera_app_module.app)
+        res = _post_stream(client, params={"session_id": "stream-many-chunks"})
+    events = _parse_ndjson(res.text)
+    text_events = [e for e in events if e["event"] == "text_chunk"]
+    # Tight lower bound: a multi-sentence fixture (~30 words) should
+    # produce well over 2 chunks under the word-group chunker.  If
+    # this assertion fires, something regressed back toward
+    # sentence-level emission and the reply will feel "all at once"
+    # again.
+    assert len(text_events) >= 5, (
+        f"progressive text chunking regressed: got {len(text_events)} "
+        f"chunks for a multi-sentence reply"
     )
