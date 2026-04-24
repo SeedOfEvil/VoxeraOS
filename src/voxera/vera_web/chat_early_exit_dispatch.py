@@ -138,17 +138,25 @@ def _followup_evidence_detail(evidence: ReviewedJobEvidence) -> str:
     return f"Prior state: {evidence.state}"
 
 
+# Inspection-intent phrasings.  Each alternative is anchored either by a
+# qualifying keyword (content/draft/preview) or by end-of-message so that
+# legitimate questions like "what are you going to write about for the
+# meeting?" do NOT route to the inspection handler.
 _PREVIEW_CONTENT_INSPECTION_RE = re.compile(
-    r"\b("
-    r"where\s+is\s+(?:the\s+)?(?:preview\s+)?content"
-    r"|show\s+(?:me\s+)?(?:the\s+)?(?:current\s+)?(?:preview\s+)?content"
-    r"|what\s+content\s+is\s+in\s+(?:the\s+)?(?:draft|preview)"
-    r"|what(?:\s+is|'?s)\s+in\s+(?:the\s+)?(?:current\s+)?(?:draft|preview)"
-    r"|show\s+(?:current\s+)?preview\s+content"
-    r"|what\s+are\s+you\s+going\s+to\s+write"
-    r"|what\s+will\s+(?:be\s+)?(?:written|saved)"
-    r"|show\s+me\s+(?:the\s+)?draft"
-    r")\b",
+    r"(?:"
+    r"\bwhere\s+is\s+(?:the\s+)?(?:preview\s+)?content\b"
+    r"|\bshow\s+(?:me\s+)?(?:the\s+)?(?:current\s+)?(?:preview\s+)?content\b"
+    r"|\bwhat\s+content\s+is\s+in\s+(?:the\s+)?(?:draft|preview)\b"
+    r"|\bwhat(?:\s+is|'?s)\s+in\s+(?:the\s+)?(?:current\s+)?(?:draft|preview)\b"
+    r"|\bshow\s+(?:current\s+)?preview\s+content\b"
+    # End-anchored — "what are you going to write?" matches; "what are you
+    # going to write about for the meeting?" does not.
+    r"|\bwhat\s+are\s+you\s+going\s+to\s+write"
+    r"(?:\s+to\s+(?:disk|the\s+file|the\s+note|the\s+preview))?"
+    r"\s*\??\s*$"
+    r"|\bwhat\s+will\s+(?:be\s+)?(?:written|saved)\s*\??\s*$"
+    r"|\bshow\s+me\s+(?:the\s+)?draft\b"
+    r")",
     re.IGNORECASE,
 )
 

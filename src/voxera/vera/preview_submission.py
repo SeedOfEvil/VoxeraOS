@@ -11,13 +11,26 @@ from . import session_store
 from .draft_revision import looks_like_preview_rename_or_save_as_request
 
 _EXPLICIT_EMPTY_FILE_RE = re.compile(
-    r"\b(empty|blank|touch|zero[- ]byte|zero\s+byte)\b",
+    # Verb-anchored to the empty-file intent so substrings like
+    # "write a file about the empty set" or "save a note on blank-slate theory"
+    # do NOT bypass the fail-closed guard.  Two recognised shapes:
+    #   1. "create/make/write [me] [a/an] (empty|blank|zero-byte) (file|note|document)"
+    #   2. "touch <something>.<ext>" (POSIX-style empty-file create)
+    r"\b(?:create|make|write)\s+(?:me\s+)?(?:an?\s+)?"
+    r"(?:empty|blank|zero[- ]byte)\s+(?:file|note|document)\b"
+    r"|\btouch\s+\S+\.\w+\b",
     re.IGNORECASE,
 )
 
 
 def _is_explicit_empty_file_intent(goal: str) -> bool:
-    """Return True when the goal explicitly requests an empty/blank file."""
+    """Return True when the goal explicitly requests an empty/blank file.
+
+    Intent-verb anchored: matches phrases like "create an empty file",
+    "make a blank note", "create a zero-byte file", or "touch x.txt".
+    Does NOT match incidental occurrences of "empty" / "blank" / "touch"
+    inside ordinary content goals (e.g. "write a file about the empty set").
+    """
     return bool(_EXPLICIT_EMPTY_FILE_RE.search(goal))
 
 
@@ -312,6 +325,12 @@ def submit_active_preview_for_session(
     # Fail closed when a write_file preview has empty content without an
     # explicit empty-file intent.  Submitting an empty file silently is a
     # trust violation — the user asked for content that never materialized.
+    #
+    # Note: .strip() treats whitespace-only content as empty by design.
+    # A whitespace-only authored body is virtually always a binding bug
+    # (failed extraction, dropped text), not deliberate content.  If a
+    # legitimate whitespace-sensitive use case ever arises, the user can
+    # use an explicit empty-file intent to opt out of this guard.
     _preview_write_file = preview_to_submit.get("write_file")
     if isinstance(_preview_write_file, dict):
         _preview_content = str(_preview_write_file.get("content") or "").strip()

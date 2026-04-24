@@ -675,7 +675,9 @@ class TestActiveDraftContentRefresh:
 
 class TestEmptyFileIntentVariants:
     """Explicit empty-file requests ('touch x.txt', 'create a blank file …')
-    must be recognised by the guard so they can submit through."""
+    must be recognised by the guard so they can submit through.  Substring
+    occurrences of empty/blank/touch in ordinary content goals must NOT
+    bypass the guard."""
 
     def test_touch_intent_allowed(self) -> None:
         assert _is_explicit_empty_file_intent("touch placeholder.txt") is True
@@ -686,12 +688,42 @@ class TestEmptyFileIntentVariants:
     def test_empty_intent_allowed(self) -> None:
         assert _is_explicit_empty_file_intent("create an empty file called x.txt") is True
 
+    def test_create_me_an_empty_file_allowed(self) -> None:
+        assert _is_explicit_empty_file_intent("create me an empty file called x.txt") is True
+
     def test_zero_byte_intent_allowed(self) -> None:
         assert _is_explicit_empty_file_intent("create a zero-byte file called x.txt") is True
+
+    def test_zero_space_byte_intent_allowed(self) -> None:
+        assert _is_explicit_empty_file_intent("create a zero byte file called x.txt") is True
 
     def test_normal_content_intent_not_allowed(self) -> None:
         assert _is_explicit_empty_file_intent("write a file with a joke") is False
         assert _is_explicit_empty_file_intent("save that answer") is False
+
+    # ── False-positive defenses (regression for over-permissive substring) ──
+
+    def test_write_about_empty_set_not_allowed(self) -> None:
+        """A content topic that contains the word 'empty' must not trigger
+        the guard bypass — the user wants a file ABOUT empty sets, not an
+        empty file."""
+        assert _is_explicit_empty_file_intent("write a file about the empty set") is False
+
+    def test_blank_slate_topic_not_allowed(self) -> None:
+        assert _is_explicit_empty_file_intent("save a note on blank-slate theory") is False
+
+    def test_touch_up_idiom_not_allowed(self) -> None:
+        """'touch up that draft' is an editing idiom, not an empty-file create."""
+        assert _is_explicit_empty_file_intent("touch up that draft") is False
+
+    def test_empty_content_phrase_not_allowed(self) -> None:
+        """A content goal that mentions 'empty content' (e.g. 'write a file
+        with empty content') must not bypass — 'empty' is not adjacent to
+        the file/note token in the create-empty-file shape."""
+        assert _is_explicit_empty_file_intent("write me a file with empty content") is False
+
+    def test_empty_field_phrase_not_allowed(self) -> None:
+        assert _is_explicit_empty_file_intent("write a file with the empty field") is False
 
 
 # ---------------------------------------------------------------------------
@@ -826,6 +858,73 @@ class TestAdditionalContentInspectionPhrasings:
                     "ok:preview_content_inspection_empty",
                 }
             ), f"Inspection must not hijack ordinary message: {msg!r}"
+
+    def test_what_are_you_going_to_write_about_topic_does_not_hijack(self, tmp_path: Path) -> None:
+        """Regression: 'what are you going to write about for the meeting?'
+        must NOT route to the inspection handler — it's an open conversational
+        question, not a draft-state inspection."""
+        queue = tmp_path / "queue"
+        session_id = "vera-inspection-write-about"
+        vera_session_store.write_session_preview(
+            queue,
+            session_id,
+            {
+                "goal": "write a file",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/note.txt",
+                    "content": "body",
+                    "mode": "overwrite",
+                },
+            },
+        )
+        for msg in (
+            "what are you going to write about for the meeting?",
+            "what are you going to write next?",
+            "What are you going to write in the speech?",
+        ):
+            result = self._dispatch(
+                message=msg,
+                queue_root=queue,
+                session_id=session_id,
+            )
+            assert not (
+                result.matched is True
+                and result.status
+                in {
+                    "ok:preview_content_inspection",
+                    "ok:preview_content_inspection_empty",
+                }
+            ), f"Inspection must not hijack open question: {msg!r}"
+
+    def test_what_are_you_going_to_write_question_form_matches(self, tmp_path: Path) -> None:
+        """The bounded form 'what are you going to write?' (and 'what are
+        you going to write to the file?') must still route to inspection."""
+        queue = tmp_path / "queue"
+        session_id = "vera-inspection-write-bounded"
+        vera_session_store.write_session_preview(
+            queue,
+            session_id,
+            {
+                "goal": "write a file",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/note.txt",
+                    "content": "authored body",
+                    "mode": "overwrite",
+                },
+            },
+        )
+        for msg in (
+            "what are you going to write?",
+            "What are you going to write to the file?",
+            "what are you going to write to the note",
+        ):
+            result = self._dispatch(
+                message=msg,
+                queue_root=queue,
+                session_id=session_id,
+            )
+            assert result.matched is True
+            assert result.status == "ok:preview_content_inspection"
 
 
 # ---------------------------------------------------------------------------
