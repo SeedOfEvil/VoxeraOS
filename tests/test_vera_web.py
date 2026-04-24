@@ -1336,7 +1336,10 @@ def test_yes_please_submits_file_write_preview_when_present(tmp_path, monkeypatc
 
     client.post(
         "/chat",
-        data={"session_id": sid, "message": "write a file called wittyjoke.txt"},
+        data={
+            "session_id": sid,
+            "message": 'write a file called wittyjoke.txt with the content "a joke body"',
+        },
     )
     res = client.post("/chat", data={"session_id": sid, "message": "yes please"})
 
@@ -1345,6 +1348,37 @@ def test_yes_please_submits_file_write_preview_when_present(tmp_path, monkeypatc
     assert len(jobs) == 1
     payload = json.loads(jobs[0].read_text(encoding="utf-8"))
     assert "wittyjoke.txt" in payload["goal"]
+    # Empty-content submit guard must not block this — content is authored.
+    assert payload["write_file"]["content"] == "a joke body"
+
+
+def test_yes_please_blocks_submission_when_preview_content_is_empty(tmp_path, monkeypatch):
+    """Empty-content fail-closed at submit: a 'write a file called X' shell
+    with no authored content must not submit even when the user confirms.
+
+    This replaces the pre-sweep behavior where empty previews submitted
+    silently, producing empty files on disk.  The new invariant: queue
+    intake is never called for an empty write_file preview unless the goal
+    explicitly requests an empty file."""
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    client = TestClient(vera_app_module.app)
+    client.get("/")
+    sid = client.cookies.get("vera_session_id") or ""
+
+    client.post(
+        "/chat",
+        data={"session_id": sid, "message": "write a file called wittyjoke.txt"},
+    )
+    res = client.post("/chat", data={"session_id": sid, "message": "yes please"})
+
+    # No queue job written, preview preserved, honest fail-closed reply.
+    assert "did not submit" in res.text.lower()
+    assert "empty" in res.text.lower()
+    jobs = list((queue / "inbox").glob("inbox-*.json"))
+    assert jobs == []
+    preview = vera_session_store.read_session_preview(queue, sid)
+    assert preview is not None
 
 
 def test_note_write_and_file_read_requests_render_preview_pane_without_voxera_json(
@@ -1545,7 +1579,15 @@ def test_handoff_failure_reports_honestly(tmp_path, monkeypatch):
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    client.post("/chat", data={"session_id": sid, "message": "write a note called hello.txt"})
+    # Use an authored-content preview so the empty-content submit guard
+    # does not short-circuit before the boom hook is reached.
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called hello.txt with the content "hi there"',
+        },
+    )
     res = client.post("/chat", data={"session_id": sid, "message": "submit it"})
 
     assert "could not submit" in res.text
@@ -2124,7 +2166,15 @@ def test_preview_survives_into_handoff_submit_action(tmp_path, monkeypatch):
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    client.post("/chat", data={"session_id": sid, "message": "write a note called hello.txt"})
+    # Use an authored-content preview so the empty-content submit guard
+    # does not block the /handoff submission.
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called hello.txt with the content "hi there"',
+        },
+    )
 
     preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
@@ -2337,13 +2387,23 @@ def test_named_note_preview_and_submitted_payload_stay_consistent(tmp_path, monk
     client = TestClient(vera_app_module.app)
     client.get("/")
     sid = client.cookies.get("vera_session_id") or ""
-    client.post("/chat", data={"session_id": sid, "message": "write a note called jokester.txt"})
+    # Use an authored-content preview so the empty-content submit guard does
+    # not block submission; the test's purpose is payload-consistency, not
+    # empty-content edge cases (covered separately).
+    client.post(
+        "/chat",
+        data={
+            "session_id": sid,
+            "message": 'write a file called jokester.txt with the content "a joke body"',
+        },
+    )
 
     preview = vera_session_store.read_session_preview(queue, sid)
     assert preview is not None
     assert preview["goal"] == "write a file called jokester.txt with provided content"
     assert preview["write_file"]["path"] == "~/VoxeraOS/notes/jokester.txt"
     assert preview["write_file"]["mode"] == "overwrite"
+    assert preview["write_file"]["content"] == "a joke body"
 
     client.post("/chat", data={"session_id": sid, "message": "submit it"})
     jobs = list((queue / "inbox").glob("inbox-*.json"))
@@ -2351,6 +2411,7 @@ def test_named_note_preview_and_submitted_payload_stay_consistent(tmp_path, monk
     payload = json.loads(jobs[0].read_text(encoding="utf-8"))
     assert payload["goal"] == "write a file called jokester.txt with provided content"
     assert payload["write_file"]["path"] == "~/VoxeraOS/notes/jokester.txt"
+    assert payload["write_file"]["content"] == "a joke body"
 
 
 def test_filename_refinement_replaces_active_preview(tmp_path, monkeypatch):
