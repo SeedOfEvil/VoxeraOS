@@ -171,6 +171,12 @@ def test_dictation_enhancer_js_is_served(tmp_path: Path, monkeypatch: pytest.Mon
     # renderer for thread updates so assistant replies render through
     # the same bounded markdown subset that typed replies use.
     assert "window.__veraApplyServerTurns" in res.text
+    # Voice-stream ordering contract: transcript bubble must be rendered
+    # from the early STT event before assistant delta handling.
+    assert "renderTranscriptBubble" in res.text
+    stt_idx = res.text.find('if (ev.type === "stt")')
+    delta_idx = res.text.find('else if (ev.type === "assistant_delta")')
+    assert stt_idx != -1 and delta_idx != -1 and stt_idx < delta_idx
 
 
 def test_chat_voice_persists_voice_transcript_turn(
