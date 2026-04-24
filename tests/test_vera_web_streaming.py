@@ -122,6 +122,15 @@ def test_voice_stream_emits_transcript_then_assistant_deltas(tmp_path: Path, mon
     assert events[0]["transcript"] == "voice hello"
     assert [e["delta"] for e in events if e["type"] == "assistant_delta"] == ["voice ", "reply"]
     assert events[-1]["type"] == "done"
+    done_turns = events[-1]["turns"]
+    voice_user_turns = [
+        t
+        for t in done_turns
+        if str(t.get("role") or "").strip() == "user"
+        and str(t.get("input_origin") or "").strip() == "voice_transcript"
+    ]
+    assert len(voice_user_turns) == 1
+    assert str(voice_user_turns[0].get("text") or "") == "voice hello"
 
 
 def test_chat_stream_sets_anti_buffering_headers(tmp_path: Path, monkeypatch) -> None:

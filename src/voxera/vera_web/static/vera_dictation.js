@@ -284,6 +284,8 @@
         var partial = "";
         var streamBubble = null;
         var streamText = null;
+        var transcriptRendered = false;
+        var transcriptText = "";
         while (true) {
           var item = await reader.read();
           if (item.done) break;
@@ -298,8 +300,17 @@
               if (!ev.ok) {
                 throw new Error("Transcription failed.");
               }
+              transcriptText = String(ev.transcript || "").trim();
+              if (transcriptText) {
+                renderTranscriptBubble(transcriptText);
+                transcriptRendered = true;
+              }
               setState("Vera thinking…");
             } else if (ev.type === "assistant_delta") {
+              if (!transcriptRendered && transcriptText) {
+                renderTranscriptBubble(transcriptText);
+                transcriptRendered = true;
+              }
               if (!streamBubble) {
                 streamBubble = document.createElement("article");
                 streamBubble.className = "bubble assistant";
@@ -339,6 +350,29 @@
         setState("Idle");
         setError(errMessage(err));
       });
+  }
+
+  function renderTranscriptBubble(transcript) {
+    var thread = document.getElementById("thread");
+    if (!thread || !transcript) return;
+    var existing = thread.querySelector(
+      '.bubble.user[data-input-origin="voice_transcript"][data-streaming-temp="true"]',
+    );
+    if (existing) return;
+    var bubble = document.createElement("article");
+    bubble.className = "bubble user";
+    bubble.dataset.inputOrigin = "voice_transcript";
+    bubble.dataset.streamingTemp = "true";
+    var role = document.createElement("div");
+    role.className = "role";
+    role.textContent = "You (voice transcript)";
+    var text = document.createElement("div");
+    text.className = "text";
+    text.textContent = transcript;
+    bubble.appendChild(role);
+    bubble.appendChild(text);
+    thread.appendChild(bubble);
+    thread.scrollTop = thread.scrollHeight;
   }
 
   function applyDictationResult(payload) {
