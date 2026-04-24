@@ -1672,10 +1672,15 @@ async def chat_stream(request: Request) -> StreamingResponse:
             }
         )
 
-        yield_queue: list[str] = []
+        delta_queue: asyncio.Queue[str] = asyncio.Queue()
 
         async def _relay_delta(delta: str) -> None:
-            yield_queue.append(delta)
+            if delta:
+                await delta_queue.put(delta)
+                # Cooperative checkpoint: yield to the response coroutine so
+                # deltas are flushed to the client during generation instead
+                # of coalescing near completion.
+                await asyncio.sleep(0)
 
         turn_task = asyncio.create_task(
             run_vera_chat_turn(
@@ -1686,15 +1691,15 @@ async def chat_stream(request: Request) -> StreamingResponse:
                 stream_delta_hook=_relay_delta,
             )
         )
-        while not turn_task.done():
-            while yield_queue:
-                piece = yield_queue.pop(0)
-                yield _ndjson_line({"type": "assistant_delta", "delta": piece})
-            await asyncio.sleep(0.01)
-        result = await turn_task
-        while yield_queue:
-            piece = yield_queue.pop(0)
+        while True:
+            if turn_task.done() and delta_queue.empty():
+                break
+            try:
+                piece = await asyncio.wait_for(delta_queue.get(), timeout=0.05)
+            except TimeoutError:
+                continue
             yield _ndjson_line({"type": "assistant_delta", "delta": piece})
+        result = await turn_task
         if result.status == "stream_failed_after_partial":
             yield _ndjson_line(
                 {
@@ -1722,6 +1727,9 @@ async def chat_stream(request: Request) -> StreamingResponse:
 
     response = StreamingResponse(_events(), media_type="application/x-ndjson")
     response.set_cookie("vera_session_id", active_session, httponly=True, samesite="lax")
+    response.headers["Cache-Control"] = "no-cache, no-transform"
+    response.headers["X-Accel-Buffering"] = "no"
+    response.headers["Connection"] = "keep-alive"
     return response
 
 
@@ -2064,10 +2072,12 @@ async def chat_voice_stream(request: Request) -> StreamingResponse:
         if not stt_ok or not transcript:
             yield _ndjson_line({"type": "error", "status": "stt_failed"})
             return
-        delta_chunks: list[str] = []
+        delta_queue: asyncio.Queue[str] = asyncio.Queue()
 
         async def _relay(delta: str) -> None:
-            delta_chunks.append(delta)
+            if delta:
+                await delta_queue.put(delta)
+                await asyncio.sleep(0)
 
         task = asyncio.create_task(
             run_vera_chat_turn(
@@ -2078,13 +2088,15 @@ async def chat_voice_stream(request: Request) -> StreamingResponse:
                 stream_delta_hook=_relay,
             )
         )
-        while not task.done():
-            while delta_chunks:
-                yield _ndjson_line({"type": "assistant_delta", "delta": delta_chunks.pop(0)})
-            await asyncio.sleep(0.01)
+        while True:
+            if task.done() and delta_queue.empty():
+                break
+            try:
+                piece = await asyncio.wait_for(delta_queue.get(), timeout=0.05)
+            except TimeoutError:
+                continue
+            yield _ndjson_line({"type": "assistant_delta", "delta": piece})
         result = await task
-        while delta_chunks:
-            yield _ndjson_line({"type": "assistant_delta", "delta": delta_chunks.pop(0)})
         if result.status == "stream_failed_after_partial":
             yield _ndjson_line(
                 {
@@ -2122,6 +2134,9 @@ async def chat_voice_stream(request: Request) -> StreamingResponse:
 
     response = StreamingResponse(_events(), media_type="application/x-ndjson")
     response.set_cookie("vera_session_id", active_session, httponly=True, samesite="lax")
+    response.headers["Cache-Control"] = "no-cache, no-transform"
+    response.headers["X-Accel-Buffering"] = "no"
+    response.headers["Connection"] = "keep-alive"
     return response
 
 

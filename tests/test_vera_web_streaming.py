@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -121,6 +122,75 @@ def test_voice_stream_emits_transcript_then_assistant_deltas(tmp_path: Path, mon
     assert events[0]["transcript"] == "voice hello"
     assert [e["delta"] for e in events if e["type"] == "assistant_delta"] == ["voice ", "reply"]
     assert events[-1]["type"] == "done"
+
+
+def test_chat_stream_sets_anti_buffering_headers(tmp_path: Path, monkeypatch) -> None:
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    monkeypatch.setattr(vera_app_module, "load_voice_foundation_flags", _voice_flags)
+
+    async def _fake_turn(**_kwargs):
+        return vera_app_module.ChatTurnResult(
+            session_id="header-test",
+            turns=[{"role": "user", "text": "hi"}, {"role": "assistant", "text": "ok"}],
+            status="ok:test",
+            assistant_text="ok",
+            preview=None,
+        )
+
+    monkeypatch.setattr(vera_app_module, "run_vera_chat_turn", _fake_turn)
+    client = TestClient(vera_app_module.app)
+    res = client.post("/chat/stream", data={"session_id": "header-test", "message": "hi"})
+    assert res.status_code == 200
+    assert res.headers.get("x-accel-buffering") == "no"
+    assert "no-transform" in str(res.headers.get("cache-control") or "")
+
+
+def test_chat_stream_emits_delta_before_done(tmp_path: Path, monkeypatch) -> None:
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    monkeypatch.setattr(vera_app_module, "load_voice_foundation_flags", _voice_flags)
+
+    async def _fake_turn(**kwargs):
+        hook = kwargs.get("stream_delta_hook")
+        assert hook is not None
+        await hook("first ")
+        await asyncio.sleep(0.05)
+        await hook("second")
+        await asyncio.sleep(0.05)
+        return vera_app_module.ChatTurnResult(
+            session_id="timing-test",
+            turns=[{"role": "user", "text": "hi"}, {"role": "assistant", "text": "first second"}],
+            status="ok:test",
+            assistant_text="first second",
+            preview=None,
+        )
+
+    monkeypatch.setattr(vera_app_module, "run_vera_chat_turn", _fake_turn)
+    client = TestClient(vera_app_module.app)
+    started = time.monotonic()
+    first_delta_at: float | None = None
+    done_at: float | None = None
+    with client.stream(
+        "POST",
+        "/chat/stream",
+        data={"session_id": "timing-test", "message": "hi"},
+    ) as response:
+        assert response.status_code == 200
+        for line in response.iter_lines():
+            if not line:
+                continue
+            event = json.loads(line)
+            if event.get("type") == "assistant_delta" and first_delta_at is None:
+                first_delta_at = time.monotonic()
+            if event.get("type") == "done":
+                done_at = time.monotonic()
+                break
+
+    assert first_delta_at is not None
+    assert done_at is not None
+    assert first_delta_at - started < 0.08
+    assert done_at - first_delta_at > 0.03
 
 
 def test_generate_vera_reply_stream_falls_back_to_batch_before_any_text(monkeypatch) -> None:
