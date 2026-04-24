@@ -397,12 +397,25 @@ def assemble_assistant_reply(  # noqa: C901
             "or 'tell me a different joke'."
         )
     if generation_content_refresh_failed_closed:
-        assistant_text = (
-            f"{assistant_text}\n\n"
-            "I left the active draft content unchanged because I could not use this turn as "
-            "authoritative generated content. Please ask for explicit content again or provide "
-            "the exact text to save."
-        ).strip()
+        # When the LLM reply asserted it added/appended/expanded content but
+        # the binding layer did NOT mutate the preview, appending the honest
+        # "unchanged" note produces a contradictory mixed reply ("I added 20
+        # jokes. I left the draft unchanged."). Replace the assistant text
+        # entirely with the honest fail-closed message in that case so the
+        # false-success claim does not leak to the user.
+        if looks_like_preview_update_claim(assistant_text):
+            assistant_text = (
+                "I could not safely update the active preview, so I left it unchanged. "
+                "Try rephrasing with the specific items you want added, or provide "
+                "the exact text you want in the file."
+            )
+        else:
+            assistant_text = (
+                f"{assistant_text}\n\n"
+                "I left the active draft content unchanged because I could not use this turn as "
+                "authoritative generated content. Please ask for explicit content again or "
+                "provide the exact text to save."
+            ).strip()
 
     # Writing-draft turns show authored content in chat (not a control message).
     # When a preview was prepared or updated on such a turn, append a

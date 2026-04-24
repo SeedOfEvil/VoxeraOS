@@ -485,6 +485,38 @@ Failure modes that must remain blocked:
 - explicit empty-file intent (`create an empty file called x.txt`, `touch x.txt`) → still allowed through the guard.
 - wrapper text ("I've prepared a preview…", "the draft is unchanged", "Your linked job completed…") → never saved as an authored artifact and never bound into `write_file.content`.
 
+### R) Active-preview append / expand truthful mutation
+
+Prompt sequence:
+
+1. `Good afternoon Vera, do you mind telling me a bunch of dad jokes?`
+2. `save this to a note`
+3. `name it jokiez.txt`
+4. `add 10 more jokes to the list`
+5. `Where is the content?`
+6. `submit it`
+
+Proves:
+
+- additive follow-ups ("add N more X", "append N more", "continue the list", "expand it with more", "make it longer") mutate the active write_file preview truthfully, preserving the path.
+- Vera never claims "I've added N jokes", "expanded the list", or "this brings the total to M" unless the active preview payload actually changed.
+- A typo-tolerant variant ("add 10 more jokees") behaves the same way.
+- A rename immediately preceding the append preserves the renamed path — the append never silently renames back.
+
+Expected pass:
+
+- step 4 preview path is `~/VoxeraOS/notes/jokiez.txt` (unchanged from step 3).
+- step 4 preview content contains the original jokes AND the new jokes (no duplication, no loss of original body).
+- step 4 response either shows an "updated the preview" message or honestly says the draft was left unchanged — never a false count claim.
+- step 5 content inspection shows the combined body.
+- step 6 submitted payload contains the combined body.
+
+Failure modes that must remain blocked:
+
+- LLM asserts "I've added 20 jokes" / "appended 5 bullets" / "this brings the total to 30" while the binding did NOT mutate the preview → response shaping replaces or overrides the LLM text with an honest "draft unchanged" message.
+- LLM reply is pure wrapper/status narration → binding rejects it, preview unchanged, honest fail-closed message shown.
+- Ambiguous "add it" / "add that" / "change it" → no expand binding, no false-success reply (existing ambiguity guard applies).
+
 ## 8) Automated coverage anchors
 
 The pack is represented by focused Vera tests (not one giant mixed-flow test):

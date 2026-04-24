@@ -496,6 +496,147 @@ def writing_kind_from_preview_goal(goal: str) -> str | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# Active-preview content expand / append intents
+# ---------------------------------------------------------------------------
+#
+# Detects additive follow-ups against an existing write_file preview such as:
+#   - "add 10 more jokes to the list"
+#   - "add ten more jokes"
+#   - "append 3 more examples"
+#   - "include a few more bullet points"
+#   - "continue the list"
+#   - "expand it with 4 more examples"
+#   - "add more jokes"
+#
+# These are semantically append / extend intents — the authored content from
+# the LLM reply should be appended to the existing preview content.  The
+# binding layer uses this detection to distinguish append from replace
+# semantics (replace is handled by writing refinement phrases like "make it
+# shorter", "rewrite it as bullet points").
+#
+# Intentionally narrower than a generic "add" match so ordinary messages like
+# "add your comment" or "add a note" do NOT fire this path.
+
+# Count tokens — each alternative is wrapped so the outer regex can add a
+# trailing \s+ uniformly.  "a few", "a couple more" etc. have internal spaces
+# so the pattern uses \s+ inside those alternatives.
+_COUNT_TOKEN_ALTS = (
+    r"\d{1,3}",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    r"a\s+few",
+    "several",
+    "some",
+    r"a\s+couple(?:\s+of)?",
+)
+_COUNT_TOKEN = "(?:" + "|".join(_COUNT_TOKEN_ALTS) + ")"
+
+# Filler words the LLM commonly inserts between the count and the item noun —
+# "add 10 MORE jokes", "added 20 ADDITIONAL jokes", "append 5 NEW bullets".
+_COUNT_FILLER = r"(?:more|additional|new|extra|further|another)"
+
+_ITEM_NOUN_PATTERN = (
+    r"(?:item|bullet|bullet\s+point|example|line|entry|point|fact|"
+    r"story|poem|joke|jokee|jokey|jokees|jokeys|stanza|verse|paragraph|sentence|"
+    r"step|idea|tip|quote|row|thing)"
+    r"s?"
+)
+
+_EXPAND_COUNT_DIGIT_RE = re.compile(
+    rf"\b(?:add|append|include|with|expand\s+with)\s+(\d{{1,3}})\s+"
+    rf"(?:{_COUNT_FILLER}\s+)?{_ITEM_NOUN_PATTERN}\b",
+    re.IGNORECASE,
+)
+
+_EXPAND_COUNT_WORD_RE = re.compile(
+    rf"\b(?:add|append|include|with|expand\s+with)\s+({_COUNT_TOKEN})\s+"
+    rf"(?:{_COUNT_FILLER}\s+)?{_ITEM_NOUN_PATTERN}\b",
+    re.IGNORECASE,
+)
+
+_EXPAND_INTENT_RE = re.compile(
+    r"(?:"
+    # "add/append/include [N] more <item>s [to the list/content/file/draft]"
+    rf"\b(?:add|append|include)\s+(?:{_COUNT_TOKEN}\s+)?"
+    rf"(?:{_COUNT_FILLER}\s+)?{_ITEM_NOUN_PATTERN}"
+    r"(?:\s+to\s+(?:the\s+|this\s+|that\s+)?(?:list|content|note|file|draft|end))?"
+    # "continue the list/note/content/draft/writing"
+    r"|\bcontinue\s+(?:the\s+|this\s+|that\s+)?"
+    r"(?:list|content|note|text|draft|writing|document)\b"
+    # "expand it / expand the list / expand the note [with N more ...]"
+    r"|\bexpand\s+(?:it|that|this|the\s+list|the\s+content|the\s+note|the\s+draft|the\s+file)\b"
+    # "make it longer"
+    r"|\bmake\s+(?:it|that|this)\s+longer\b"
+    # "keep going" / "keep adding"
+    r"|\bkeep\s+(?:going|adding)\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
+def is_active_preview_content_expand_request(message: str) -> bool:
+    """Detect additive/expand follow-ups against an active preview.
+
+    Matches patterns like "add 10 more jokes", "continue the list", "expand
+    it with more examples", "make it longer".  Intentionally conservative —
+    bare "add it" / "add that" / "add something" do NOT match because they
+    are ambiguous and should fail closed.
+    """
+    lowered = message.strip().lower()
+    if not lowered:
+        return False
+    return bool(_EXPAND_INTENT_RE.search(lowered))
+
+
+_WORD_NUMBER_MAP = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+
+
+def extract_expand_requested_count(message: str) -> int | None:
+    """Return the requested item count for "add N more X" patterns.
+
+    Returns the parsed count (1-100) or None when no explicit number is
+    present / the number is out of safe bounds.  Callers should use this to
+    avoid overclaiming in response text (e.g. "added 20 jokes" when the user
+    asked for 10).
+    """
+    lowered = message.strip().lower()
+    if not lowered:
+        return None
+    digit_match = _EXPAND_COUNT_DIGIT_RE.search(lowered)
+    if digit_match:
+        try:
+            n = int(digit_match.group(1))
+        except ValueError:
+            return None
+        return n if 1 <= n <= 100 else None
+    word_match = _EXPAND_COUNT_WORD_RE.search(lowered)
+    if word_match:
+        word = re.sub(r"\s+", " ", word_match.group(1).strip())
+        if word in _WORD_NUMBER_MAP:
+            return _WORD_NUMBER_MAP[word]
+    return None
+
+
 def looks_like_preview_rename_or_save_as_request(message: str) -> bool:
     normalized = message.strip().lower()
     if not normalized:

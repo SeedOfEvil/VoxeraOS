@@ -31,7 +31,7 @@ def looks_like_preview_update_claim(text: str) -> bool:
     lowered = text.strip().lower()
     if not lowered:
         return False
-    return any(
+    if any(
         phrase in lowered
         for phrase in (
             "prepared a proposal",
@@ -61,6 +61,49 @@ def looks_like_preview_update_claim(text: str) -> bool:
             "latest version is ready in the preview",
             "proposal in the preview",
             "refined the proposal in the preview",
+            # Active-preview append / expand claim phrases — when the LLM
+            # says it added/appended/expanded the list/content/draft without
+            # the binding layer actually mutating the preview, these would
+            # leak as a false-success reply if the conversational reply
+            # reshape did not take over.
+            "added to the list",
+            "added to the content",
+            "added to the draft",
+            "added to the note",
+            "added to the file",
+            "added to the preview",
+            "appended to the list",
+            "appended to the content",
+            "appended to the draft",
+            "appended to the note",
+            "expanded the list",
+            "expanded the content",
+            "expanded the draft",
+            "expanded the note",
+            "expanded the preview",
+            "extended the list",
+            "extended the content",
+            "extended the draft",
+        )
+    ):
+        return True
+    # Numeric "added N <items>" / "appended N <items>" false-success claims.
+    # "I've added 20 jokes", "appended 5 bullets", "added 20 additional jokes",
+    # "this brings the total to 30".  Allows filler adjectives between count
+    # and item noun (more | additional | new | extra | further | another).
+    if re.search(
+        r"\b(?:added|appended|extended|expanded\s+with)\s+\d+\s+"
+        r"(?:(?:more|additional|new|extra|further|another)\s+)?"
+        r"(?:jokes?|jokees?|jokeys?|items?|bullets?|examples?|lines?|entries?|"
+        r"points?|facts?|stories?|poems?|things?|stanzas?|verses?|paragraphs?|"
+        r"sentences?|steps?|ideas?|tips?|quotes?|rows?)\b",
+        lowered,
+    ):
+        return True
+    return bool(
+        re.search(
+            r"\bthis\s+brings\s+the\s+(?:total|list|count)\s+to\s+\d+\b",
+            lowered,
         )
     )
 

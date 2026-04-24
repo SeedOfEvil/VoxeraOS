@@ -34,6 +34,7 @@ from ..vera.draft_revision import (  # noqa: E402
     _detect_content_type_from_preview,
     _generate_refreshed_content,
     _is_clear_content_refresh_request,
+    is_active_preview_content_expand_request,
     looks_like_preview_rename_or_save_as_request,
 )
 from ..vera.preview_submission import normalize_preview_payload
@@ -430,6 +431,54 @@ def resolve_draft_content_binding(  # noqa: C901
             }
             builder_payload = shell_bound_preview
             preview_needs_write = True
+
+    # ── Active-preview content append / expand binding ──
+    # Handles additive follow-ups like "add 10 more jokes to the list",
+    # "append 3 more examples", "continue the list".  When the LLM reply
+    # produced authored prose, append it to the existing preview content and
+    # update the active preview.  When the LLM produced no authored content,
+    # fail closed so response shaping can surface an honest "draft unchanged"
+    # reply instead of letting the LLM's "I've added N jokes" claim leak.
+    _is_expand_request = is_active_preview_content_expand_request(message)
+    if (
+        _is_expand_request
+        and not is_code_draft_turn
+        and not informational_web_turn
+        and not is_enrichment_turn
+        and isinstance(pending_preview, dict)
+        and _is_refinable_prose_preview(pending_preview)
+        and not str(reply_status).strip().lower().startswith("degraded")
+        and not isinstance(builder_payload, dict)
+    ):
+        _existing_wf = pending_preview.get("write_file")
+        _existing_content = (
+            str(_existing_wf.get("content") or "") if isinstance(_existing_wf, dict) else ""
+        )
+        _new_addition = (reply_text_draft or "").strip()
+        if isinstance(_existing_wf, dict) and _existing_content.strip() and _new_addition:
+            # Sanity: reject wrapper / status / control narration addition
+            # so the LLM's "I've added N jokes" claim never lands in content.
+            if looks_like_non_authored_assistant_message(_new_addition):
+                generation_content_refresh_failed_closed = True
+            else:
+                # Best-effort dedupe: if the LLM replied with the full new
+                # content (existing body + additions), detect that and use it
+                # as a REPLACE instead of doubling via APPEND.
+                _existing_head = _existing_content.strip()[:60].lower()
+                if _existing_head and _existing_head in _new_addition.lower()[:200]:
+                    combined_content = _new_addition
+                else:
+                    combined_content = _existing_content.rstrip() + "\n" + _new_addition
+                appended_preview: dict[str, object] = {
+                    **pending_preview,
+                    "write_file": {**_existing_wf, "content": combined_content},
+                }
+                builder_payload = appended_preview
+                preview_needs_write = True
+        elif isinstance(_existing_wf, dict) and not _new_addition:
+            # LLM produced no authored text to append — fail closed so the
+            # assistant reply cannot overclaim an update.
+            generation_content_refresh_failed_closed = True
 
     # ── Generation content binding ──
     generation_binding_intent = (

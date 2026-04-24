@@ -987,3 +987,352 @@ class TestSessionTurnArtifactRegistration:
         assert len(artifacts) == 1
         content = artifacts[0]["content"].lower()
         assert "spacetime" in content or "worldline" in content
+
+
+# ---------------------------------------------------------------------------
+# L. Active-preview append / expand (additive follow-ups)
+# ---------------------------------------------------------------------------
+
+
+class TestActivePreviewExpandDetection:
+    """Section D: 'add N more X', 'append', 'continue the list' must be
+    detected as expand intents when an active preview exists.  Ambiguous
+    'add it' / 'add that' must NOT match."""
+
+    def test_add_n_more_items_matches(self) -> None:
+        from voxera.vera.draft_revision import is_active_preview_content_expand_request
+
+        assert is_active_preview_content_expand_request("add 10 more jokes to the list") is True
+        assert is_active_preview_content_expand_request("add 10 more jokes") is True
+        assert is_active_preview_content_expand_request("append 5 more bullets") is True
+        assert (
+            is_active_preview_content_expand_request("include 3 more examples to the content")
+            is True
+        )
+
+    def test_word_count_matches(self) -> None:
+        from voxera.vera.draft_revision import is_active_preview_content_expand_request
+
+        assert is_active_preview_content_expand_request("add ten more jokes") is True
+        assert is_active_preview_content_expand_request("add a few more examples") is True
+        assert is_active_preview_content_expand_request("add several more bullets") is True
+
+    def test_typo_variant_matches(self) -> None:
+        from voxera.vera.draft_revision import is_active_preview_content_expand_request
+
+        # 'jokees' / 'jokeys' — common voice/typed typos.
+        assert is_active_preview_content_expand_request("add 10 more jokees") is True
+        assert is_active_preview_content_expand_request("add 5 more jokeys") is True
+
+    def test_continue_list_matches(self) -> None:
+        from voxera.vera.draft_revision import is_active_preview_content_expand_request
+
+        assert is_active_preview_content_expand_request("continue the list") is True
+        assert is_active_preview_content_expand_request("continue the note") is True
+        assert is_active_preview_content_expand_request("continue writing") is True
+
+    def test_expand_it_matches(self) -> None:
+        from voxera.vera.draft_revision import is_active_preview_content_expand_request
+
+        assert is_active_preview_content_expand_request("expand it with more examples") is True
+        assert is_active_preview_content_expand_request("expand the list") is True
+        assert is_active_preview_content_expand_request("expand the content") is True
+
+    def test_make_it_longer_matches(self) -> None:
+        from voxera.vera.draft_revision import is_active_preview_content_expand_request
+
+        assert is_active_preview_content_expand_request("make it longer") is True
+        assert is_active_preview_content_expand_request("make that longer") is True
+
+    def test_add_more_without_count_matches(self) -> None:
+        from voxera.vera.draft_revision import is_active_preview_content_expand_request
+
+        assert is_active_preview_content_expand_request("add more jokes") is True
+        assert is_active_preview_content_expand_request("append more items") is True
+
+    def test_ambiguous_add_does_not_match(self) -> None:
+        from voxera.vera.draft_revision import is_active_preview_content_expand_request
+
+        # Bare ambiguous adds — no countable item, no clear expand target.
+        assert is_active_preview_content_expand_request("add it") is False
+        assert is_active_preview_content_expand_request("add that") is False
+        assert is_active_preview_content_expand_request("add a comment") is False
+        # Rename / save-as family must not trigger expand.
+        assert is_active_preview_content_expand_request("rename it to final.txt") is False
+        assert is_active_preview_content_expand_request("save it as final.txt") is False
+
+
+class TestExtractExpandRequestedCount:
+    """Section D: numeric counts should be parseable so response shaping
+    never overclaims what the user requested."""
+
+    def test_digit_count_returns_value(self) -> None:
+        from voxera.vera.draft_revision import extract_expand_requested_count
+
+        assert extract_expand_requested_count("add 10 more jokes") == 10
+        assert extract_expand_requested_count("append 5 more bullets") == 5
+        assert extract_expand_requested_count("include 3 more examples") == 3
+
+    def test_word_count_returns_value(self) -> None:
+        from voxera.vera.draft_revision import extract_expand_requested_count
+
+        assert extract_expand_requested_count("add ten more jokes") == 10
+        assert extract_expand_requested_count("add three more bullets") == 3
+
+    def test_no_count_returns_none(self) -> None:
+        from voxera.vera.draft_revision import extract_expand_requested_count
+
+        assert extract_expand_requested_count("add more jokes") is None
+        assert extract_expand_requested_count("continue the list") is None
+
+    def test_oversized_count_returns_none(self) -> None:
+        """Bound the count to a safe 1..100 range."""
+        from voxera.vera.draft_revision import extract_expand_requested_count
+
+        assert extract_expand_requested_count("add 9999 more jokes") is None
+        assert extract_expand_requested_count("add 0 more jokes") is None
+
+
+class TestActivePreviewAppendBinding:
+    """Section L: when an expand request arrives with a refinable active
+    preview and the LLM reply contains authored text, the binding layer
+    must APPEND the new text to the existing content (preserving path)."""
+
+    def _default_kwargs(self) -> dict:
+        return {
+            "message": "add 10 more jokes to the list",
+            "reply_code_content": None,
+            "reply_text_draft": None,
+            "reply_status": "ok",
+            "builder_payload": None,
+            "pending_preview": None,
+            "is_code_draft_turn": False,
+            "is_writing_draft_turn": False,
+            "is_explicit_writing_transform": False,
+            "informational_web_turn": False,
+            "is_enrichment_turn": False,
+            "explicit_targeted_content_refinement": False,
+            "active_preview_is_refinable_prose": False,
+            "conversational_answer_first_turn": False,
+            "active_session": "test-session-expand",
+        }
+
+    def _active_preview_with_ten_jokes(self) -> dict:
+        return {
+            "goal": "write a file called jokiez.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/jokiez.txt",
+                "content": (
+                    "1. Why did the scarecrow win an award? He was outstanding in his field.\n"
+                    "2. I told my wife she was drawing her eyebrows too high. She looked surprised.\n"
+                    "3. Why don't scientists trust atoms? They make up everything.\n"
+                    "4. What do you call a fish without eyes? A fsh.\n"
+                    "5. Why did the programmer quit? He didn't get arrays.\n"
+                    "6. I'm reading a book on anti-gravity; it's impossible to put down.\n"
+                    "7. Parallel lines have so much in common. It's a shame they'll never meet.\n"
+                    "8. I would avoid sushi if I were you. It's a little fishy.\n"
+                    "9. How does a penguin build its house? Igloos it together.\n"
+                    "10. Why did the bicycle fall over? It was two tired."
+                ),
+                "mode": "overwrite",
+            },
+        }
+
+    def test_append_succeeds_when_llm_provides_text(self) -> None:
+        from voxera.vera_web.draft_content_binding import resolve_draft_content_binding
+
+        kwargs = self._default_kwargs()
+        kwargs["pending_preview"] = self._active_preview_with_ten_jokes()
+        kwargs["active_preview_is_refinable_prose"] = True
+        new_jokes = (
+            "11. Why did the coffee file a police report? It got mugged.\n"
+            "12. What do you call cheese that isn't yours? Nacho cheese."
+        )
+        kwargs["reply_text_draft"] = new_jokes
+        result = resolve_draft_content_binding(**kwargs)
+        assert result.preview_needs_write is True
+        assert result.builder_payload is not None
+        wf = result.builder_payload["write_file"]
+        # Path preserved.
+        assert wf["path"] == "~/VoxeraOS/notes/jokiez.txt"
+        # Existing 10 jokes are still in content.
+        assert "Why did the scarecrow" in wf["content"]
+        # New jokes appended.
+        assert "coffee file a police report" in wf["content"]
+        assert "Nacho cheese" in wf["content"]
+        # Fail-closed flag NOT set.
+        assert result.generation_content_refresh_failed_closed is False
+
+    def test_append_path_preserved(self) -> None:
+        from voxera.vera_web.draft_content_binding import resolve_draft_content_binding
+
+        kwargs = self._default_kwargs()
+        pending = self._active_preview_with_ten_jokes()
+        kwargs["pending_preview"] = pending
+        kwargs["active_preview_is_refinable_prose"] = True
+        kwargs["reply_text_draft"] = "11. A new joke."
+        result = resolve_draft_content_binding(**kwargs)
+        assert result.builder_payload is not None
+        wf = result.builder_payload["write_file"]
+        # Path MUST be preserved — expand never renames.
+        assert wf["path"] == pending["write_file"]["path"]
+
+    def test_append_fails_closed_when_llm_gives_no_text(self) -> None:
+        from voxera.vera_web.draft_content_binding import resolve_draft_content_binding
+
+        kwargs = self._default_kwargs()
+        kwargs["pending_preview"] = self._active_preview_with_ten_jokes()
+        kwargs["active_preview_is_refinable_prose"] = True
+        kwargs["reply_text_draft"] = None  # LLM produced no authored text
+        result = resolve_draft_content_binding(**kwargs)
+        # Preview NOT updated.
+        assert result.preview_needs_write is False
+        assert result.builder_payload is None
+        # Fail-closed flag set so response shaping replaces the LLM claim.
+        assert result.generation_content_refresh_failed_closed is True
+
+    def test_append_fails_closed_when_llm_emits_wrapper_text(self) -> None:
+        """If the LLM reply is pure wrapper/status narration, the binding
+        layer must reject it rather than writing wrapper text into the file."""
+        from voxera.vera_web.draft_content_binding import resolve_draft_content_binding
+
+        kwargs = self._default_kwargs()
+        kwargs["pending_preview"] = self._active_preview_with_ten_jokes()
+        kwargs["active_preview_is_refinable_prose"] = True
+        kwargs["reply_text_draft"] = (
+            "I've prepared a preview with this content. "
+            "This is preview-only — nothing has been submitted yet."
+        )
+        result = resolve_draft_content_binding(**kwargs)
+        assert result.preview_needs_write is False
+        assert result.builder_payload is None
+        assert result.generation_content_refresh_failed_closed is True
+
+    def test_append_dedupes_when_llm_includes_full_existing_content(self) -> None:
+        """If the LLM returned the full new content (existing + additions)
+        instead of just the additions, the binding must detect that and use
+        the LLM reply as-is (REPLACE) to avoid doubling the existing body."""
+        from voxera.vera_web.draft_content_binding import resolve_draft_content_binding
+
+        kwargs = self._default_kwargs()
+        pending = self._active_preview_with_ten_jokes()
+        kwargs["pending_preview"] = pending
+        kwargs["active_preview_is_refinable_prose"] = True
+        # LLM replied with full new list including original jokes.
+        full_reply = pending["write_file"]["content"] + (
+            "\n11. Why did the coffee file a police report? It got mugged."
+        )
+        kwargs["reply_text_draft"] = full_reply
+        result = resolve_draft_content_binding(**kwargs)
+        assert result.builder_payload is not None
+        wf = result.builder_payload["write_file"]
+        # Original content appears EXACTLY ONCE (no doubling).
+        scarecrow_count = wf["content"].count("Why did the scarecrow")
+        assert scarecrow_count == 1, (
+            f"scarecrow joke appears {scarecrow_count} times — expected 1 (no doubling)"
+        )
+        assert "coffee file a police report" in wf["content"]
+
+
+class TestResponseShapingFalseSuccessClaimReplacement:
+    """Section C: when generation_content_refresh_failed_closed is True AND
+    the LLM reply asserts a false success claim ('I've added 20 jokes',
+    'appended 5 bullets', 'this brings the total to 30'), response shaping
+    must REPLACE the LLM text with an honest 'draft unchanged' message —
+    never leak the false count to the user."""
+
+    def test_false_added_claim_gets_replaced(self) -> None:
+        from voxera.vera_web.response_shaping import assemble_assistant_reply
+
+        pending = {
+            "goal": "write a file called jokiez.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/jokiez.txt",
+                "content": "1. Joke one.\n2. Joke two.",
+                "mode": "overwrite",
+            },
+        }
+        result = assemble_assistant_reply(
+            "I've added 20 additional jokes to the content of your note. "
+            "This brings the total list to 30.",
+            message="add 10 more jokes to the list",
+            pending_preview=pending,
+            builder_payload=None,
+            in_voxera_preview_flow=False,
+            is_code_draft_turn=False,
+            is_writing_draft_turn=False,
+            is_enrichment_turn=False,
+            conversational_answer_first_turn=False,
+            is_json_content_request=False,
+            is_voxera_control_turn=False,
+            explicit_targeted_content_refinement=False,
+            preview_update_rejected=False,
+            generation_content_refresh_failed_closed=True,
+            reply_status="ok:test",
+        )
+        # Primary invariant: the false count claim must not reach the user.
+        assert "20 additional jokes" not in result.assistant_text
+        assert "total list to 30" not in result.assistant_text
+        # Message must honestly indicate the draft is unchanged / not mutated.
+        lowered = result.assistant_text.lower()
+        assert "unchanged" in lowered or "could not safely update" in lowered
+
+    def test_neutral_llm_reply_still_appends_fail_closed_note(self) -> None:
+        """Preserve existing behavior for neutral LLM replies — the honest
+        note is appended rather than replacing the whole text."""
+        from voxera.vera_web.response_shaping import assemble_assistant_reply
+
+        pending = {
+            "goal": "write a file called note.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/note.txt",
+                "content": "Existing body.",
+                "mode": "overwrite",
+            },
+        }
+        # Message intentionally neutral — does not trigger rename, refresh,
+        # or ambiguous-change branches so we isolate the generation-failed
+        # response-shaping behavior.
+        result = assemble_assistant_reply(
+            "Let me think about that.",
+            message="hmm ok",
+            pending_preview=pending,
+            builder_payload=None,
+            in_voxera_preview_flow=False,
+            is_code_draft_turn=False,
+            is_writing_draft_turn=False,
+            is_enrichment_turn=False,
+            conversational_answer_first_turn=False,
+            is_json_content_request=False,
+            is_voxera_control_turn=False,
+            explicit_targeted_content_refinement=False,
+            preview_update_rejected=False,
+            generation_content_refresh_failed_closed=True,
+            reply_status="ok:test",
+        )
+        # Neutral text preserved, honest note appended.
+        assert "Let me think about that" in result.assistant_text
+        assert "left the active draft content unchanged" in result.assistant_text
+
+    def test_preview_update_claim_catches_numeric_added_form(self) -> None:
+        from voxera.vera_web.conversational_checklist import looks_like_preview_update_claim
+
+        assert looks_like_preview_update_claim("I've added 20 additional jokes") is True
+        assert looks_like_preview_update_claim("Appended 5 more bullets") is True
+        assert looks_like_preview_update_claim("This brings the total to 30") is True
+
+    def test_preview_update_claim_catches_list_append_phrases(self) -> None:
+        from voxera.vera_web.conversational_checklist import looks_like_preview_update_claim
+
+        assert looks_like_preview_update_claim("Added to the list") is True
+        assert looks_like_preview_update_claim("Expanded the content") is True
+        assert looks_like_preview_update_claim("Extended the draft") is True
+
+    def test_preview_update_claim_does_not_catch_ordinary_speech(self) -> None:
+        """Guard against over-matching — innocent uses of 'added' must not
+        fire the claim detector."""
+        from voxera.vera_web.conversational_checklist import looks_like_preview_update_claim
+
+        # "I added a link" is natural conversation, not a preview update claim.
+        assert looks_like_preview_update_claim("I added a link in my message.") is False
+        assert looks_like_preview_update_claim("Thanks for the info.") is False
