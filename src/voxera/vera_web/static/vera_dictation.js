@@ -237,7 +237,7 @@
     var params = new URLSearchParams();
     if (sessionId) params.set("session_id", sessionId);
     if (speakResponse) params.set("speak_response", "1");
-    var url = "/chat/voice";
+    var url = "/chat/voice/stream";
     var qs = params.toString();
     if (qs) url += "?" + qs;
 
@@ -274,45 +274,63 @@
       headers: { "Content-Type": mime || "audio/webm" },
       credentials: "same-origin",
     })
-      .then(function (resp) {
-        return resp
-          .json()
-          .catch(function () {
-            return { ok: false, error: "Non-JSON response (" + resp.status + ")" };
-          })
-          .then(function (payload) {
-            return { status: resp.status, payload: payload };
-          });
-      })
-      .then(function (result) {
-        uploading = false;
-        clearStagingTimers();
-        micBtn.disabled = false;
-        var payload = result.payload || {};
-        if (!result.status || result.status >= 400 || payload.ok === false) {
-          var msg =
-            payload.error ||
-            payload.detail ||
-            ("Dictation failed (" + result.status + ")");
-          setState("Idle");
-          setError(msg);
-          // Even on failure, if the payload carries fresh turns (e.g.
-          // STT succeeded but Vera errored), render them so the
-          // operator sees the voice-transcript turn land in the thread.
-          if (payload && Array.isArray(payload.turns)) {
-            applyTurnsUpdate(payload.turns, payload.turn_count);
-          }
-          // When the payload carried canonical preview truth, reflect it
-          // in the pane too.  ``preview`` is authoritative only when
-          // ``has_preview_truth`` is set — otherwise it's an STT-only
-          // failure where the pre-existing preview on disk is the real
-          // answer and we must not clobber the visible pane.
-          if (payload && payload.has_preview_truth === true) {
-            applyPreviewUpdate(payload.preview, payload.session_id);
-          }
-          return;
+      .then(async function (resp) {
+        if (!resp.ok || !resp.body) {
+          throw new Error("Dictation failed (" + resp.status + ")");
         }
-        applyDictationResult(payload);
+        var reader = resp.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = "";
+        var partial = "";
+        var streamBubble = null;
+        var streamText = null;
+        while (true) {
+          var item = await reader.read();
+          if (item.done) break;
+          buffer += decoder.decode(item.value, { stream: true });
+          var lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+          for (var i = 0; i < lines.length; i++) {
+            var line = lines[i].trim();
+            if (!line) continue;
+            var ev = JSON.parse(line);
+            if (ev.type === "stt") {
+              if (!ev.ok) {
+                throw new Error("Transcription failed.");
+              }
+              setState("Vera thinking…");
+            } else if (ev.type === "assistant_delta") {
+              if (!streamBubble) {
+                streamBubble = document.createElement("article");
+                streamBubble.className = "bubble assistant";
+                var role = document.createElement("div");
+                role.className = "role";
+                role.textContent = "Vera";
+                streamText = document.createElement("div");
+                streamText.className = "text";
+                streamBubble.appendChild(role);
+                streamBubble.appendChild(streamText);
+                var thread = document.getElementById("thread");
+                if (thread) thread.appendChild(streamBubble);
+              }
+              partial += String(ev.delta || "");
+              if (streamText) streamText.textContent = partial;
+            } else if (ev.type === "done") {
+              uploading = false;
+              clearStagingTimers();
+              micBtn.disabled = false;
+              applyDictationResult(ev);
+              return;
+            } else if (ev.type === "error") {
+              uploading = false;
+              clearStagingTimers();
+              micBtn.disabled = false;
+              setState("Idle");
+              setError(String(ev.error || ev.status || "Dictation failed."));
+              return;
+            }
+          }
+        }
       })
       .catch(function (err) {
         uploading = false;
@@ -338,7 +356,7 @@
     if (payload && payload.has_preview_truth === true) {
       applyPreviewUpdate(payload.preview, payload.session_id);
     }
-    var sttOk = payload && payload.stt && payload.stt.success;
+    var sttOk = !payload || !payload.stt || payload.stt.success;
     if (!sttOk) {
       var sttErr =
         (payload && payload.stt && payload.stt.error) ||

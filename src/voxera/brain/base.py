@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -21,4 +22,7 @@ class Brain(Protocol):
     async def generate(
         self, messages: list[dict[str, str]], tools: list[ToolSpec] | None = None
     ) -> BrainResponse: ...
+    async def generate_stream(
+        self, messages: list[dict[str, str]], tools: list[ToolSpec] | None = None
+    ) -> AsyncIterator[str]: ...
     async def capability_test(self) -> dict[str, Any]: ...

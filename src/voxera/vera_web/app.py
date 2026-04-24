@@ -2,19 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import re
 import secrets
 import tempfile
 import time
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeVar
 from urllib.parse import parse_qs
 
 from fastapi import FastAPI, HTTPException, Request, status
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
@@ -91,6 +92,7 @@ from ..vera.saveable_artifacts import (
     message_requests_referenced_content,
 )
 from ..vera.service import (
+    StreamInterruptedAfterPartialError,
     generate_preview_builder_update,
     generate_vera_reply,
 )
@@ -679,6 +681,7 @@ async def run_vera_chat_turn(
     input_origin: InputOrigin,
     session_id: str,
     voice_flags: VoiceFoundationFlags,
+    stream_delta_hook: (Callable[[str], Awaitable[None]] | None) = None,
 ) -> ChatTurnResult:
     """Vera chat turn — canonical preview-routing lane precedence.
 
@@ -896,15 +899,43 @@ async def run_vera_chat_turn(
         # weather follow-up would be invisible in sub-stage breakdowns
         # and appear as unaccounted time inside the ``vera_ms``
         # umbrella on the dictation payload.
-        reply, reply_ms = await _timed_stage(
-            generate_vera_reply(
-                turns=turns,
-                user_message=message,
-                code_draft=False,
-                writing_draft=False,
-                weather_context=session_weather_context,
+        try:
+            if stream_delta_hook is not None:
+                reply, reply_ms = await _timed_stage(
+                    generate_vera_reply(
+                        turns=turns,
+                        user_message=message,
+                        code_draft=False,
+                        writing_draft=False,
+                        weather_context=session_weather_context,
+                        stream_delta_hook=stream_delta_hook,
+                    )
+                )
+            else:
+                reply, reply_ms = await _timed_stage(
+                    generate_vera_reply(
+                        turns=turns,
+                        user_message=message,
+                        code_draft=False,
+                        writing_draft=False,
+                        weather_context=session_weather_context,
+                    )
+                )
+        except StreamInterruptedAfterPartialError as exc:
+            error_text = (
+                "The model stream interrupted before Vera could complete this reply. "
+                "No final assistant answer was persisted."
             )
-        )
+            append_session_turn(root, active_session, role="assistant", text=error_text)
+            _failed_turns = read_session_turns(root, active_session)
+            return ChatTurnResult(
+                session_id=active_session,
+                turns=_failed_turns,
+                status="stream_failed_after_partial",
+                error=str(exc),
+                assistant_text=error_text,
+                preview=read_session_preview(root, active_session),
+            )
         reply_answer = strip_internal_compiler_leakage(str(reply.get("answer") or ""))
         weather_payload = reply.get("weather_context") if isinstance(reply, dict) else None
         if isinstance(weather_payload, dict):
@@ -1267,41 +1298,79 @@ async def run_vera_chat_turn(
     should_run_builder = not informational_web_turn and not conversational_answer_first_turn
     builder_preview: dict[str, object] | None = None
     builder_ms: int | None = None
-    if should_run_builder:
-        (builder_preview, builder_ms), (reply, reply_ms) = await asyncio.gather(
-            _timed_stage(
-                generate_preview_builder_update(
+    try:
+        if should_run_builder:
+            if stream_delta_hook is not None:
+                reply_coro = generate_vera_reply(
                     turns=turns,
                     user_message=message,
-                    active_preview=pending_preview,
-                    enrichment_context=enrichment_context,
-                    investigation_context=session_investigation,
-                    recent_assistant_artifacts=recent_assistant_artifacts,
+                    code_draft=is_code_draft_turn,
+                    writing_draft=is_writing_draft_turn,
+                    weather_context=session_weather_context,
+                    stream_delta_hook=stream_delta_hook,
                 )
-            ),
-            _timed_stage(
-                generate_vera_reply(
+            else:
+                reply_coro = generate_vera_reply(
                     turns=turns,
                     user_message=message,
                     code_draft=is_code_draft_turn,
                     writing_draft=is_writing_draft_turn,
                     weather_context=session_weather_context,
                 )
-            ),
-        )
-        stage_timings["vera_preview_builder_ms"] = builder_ms
-        stage_timings["vera_reply_ms"] = reply_ms
-    else:
-        reply, reply_ms = await _timed_stage(
-            generate_vera_reply(
-                turns=turns,
-                user_message=message,
-                code_draft=is_code_draft_turn,
-                writing_draft=is_writing_draft_turn,
-                weather_context=session_weather_context,
+            (builder_preview, builder_ms), (reply, reply_ms) = await asyncio.gather(
+                _timed_stage(
+                    generate_preview_builder_update(
+                        turns=turns,
+                        user_message=message,
+                        active_preview=pending_preview,
+                        enrichment_context=enrichment_context,
+                        investigation_context=session_investigation,
+                        recent_assistant_artifacts=recent_assistant_artifacts,
+                    )
+                ),
+                _timed_stage(reply_coro),
             )
+            if builder_ms is not None:
+                stage_timings["vera_preview_builder_ms"] = builder_ms
+            stage_timings["vera_reply_ms"] = reply_ms
+        else:
+            if stream_delta_hook is not None:
+                reply, reply_ms = await _timed_stage(
+                    generate_vera_reply(
+                        turns=turns,
+                        user_message=message,
+                        code_draft=is_code_draft_turn,
+                        writing_draft=is_writing_draft_turn,
+                        weather_context=session_weather_context,
+                        stream_delta_hook=stream_delta_hook,
+                    )
+                )
+            else:
+                reply, reply_ms = await _timed_stage(
+                    generate_vera_reply(
+                        turns=turns,
+                        user_message=message,
+                        code_draft=is_code_draft_turn,
+                        writing_draft=is_writing_draft_turn,
+                        weather_context=session_weather_context,
+                    )
+                )
+            stage_timings["vera_reply_ms"] = reply_ms
+    except StreamInterruptedAfterPartialError as exc:
+        error_text = (
+            "The model stream interrupted before Vera could complete this reply. "
+            "No final assistant answer was persisted."
         )
-        stage_timings["vera_reply_ms"] = reply_ms
+        append_session_turn(root, active_session, role="assistant", text=error_text)
+        _failed_turns = read_session_turns(root, active_session)
+        return ChatTurnResult(
+            session_id=active_session,
+            turns=_failed_turns,
+            status="stream_failed_after_partial",
+            error=str(exc),
+            assistant_text=error_text,
+            preview=read_session_preview(root, active_session),
+        )
     builder_payload: dict[str, object] | None = None
     preview_update_rejected = False
     if builder_preview is not None:
@@ -1577,6 +1646,85 @@ async def run_vera_chat_turn(
     )
 
 
+def _ndjson_line(payload: dict[str, object]) -> bytes:
+    return (json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+@app.post("/chat/stream")
+async def chat_stream(request: Request) -> StreamingResponse:
+    raw = (await request.body()).decode("utf-8", errors="replace")
+    parsed = parse_qs(raw, keep_blank_values=True)
+    message = str((parsed.get("message") or [""])[0])
+    input_origin_raw = str((parsed.get("input_origin") or ["typed"])[0])
+    session_id = str((parsed.get("session_id") or [""])[0])
+    voice_flags = load_voice_foundation_flags()
+    input_origin = normalize_input_origin(input_origin_raw)
+
+    active_session = session_id.strip() or (request.cookies.get("vera_session_id") or "").strip()
+    active_session = active_session or new_session_id()
+
+    async def _events():
+        yield _ndjson_line(
+            {
+                "type": "start",
+                "session_id": active_session,
+                "input_origin": input_origin.value,
+            }
+        )
+
+        yield_queue: list[str] = []
+
+        async def _relay_delta(delta: str) -> None:
+            yield_queue.append(delta)
+
+        turn_task = asyncio.create_task(
+            run_vera_chat_turn(
+                message=message,
+                input_origin=input_origin,
+                session_id=active_session,
+                voice_flags=voice_flags,
+                stream_delta_hook=_relay_delta,
+            )
+        )
+        while not turn_task.done():
+            while yield_queue:
+                piece = yield_queue.pop(0)
+                yield _ndjson_line({"type": "assistant_delta", "delta": piece})
+            await asyncio.sleep(0.01)
+        result = await turn_task
+        while yield_queue:
+            piece = yield_queue.pop(0)
+            yield _ndjson_line({"type": "assistant_delta", "delta": piece})
+        if result.status == "stream_failed_after_partial":
+            yield _ndjson_line(
+                {
+                    "type": "error",
+                    "status": result.status,
+                    "error": result.error or "stream_failed_after_partial",
+                    "assistant_text": result.assistant_text,
+                    "turns": result.turns,
+                    "turn_count": len(result.turns),
+                }
+            )
+            return
+        yield _ndjson_line(
+            {
+                "type": "done",
+                "status": result.status,
+                "assistant_text": result.assistant_text,
+                "turns": result.turns,
+                "turn_count": len(result.turns),
+                "preview": result.preview,
+                "has_preview_truth": True,
+                "stage_timings": result.stage_timings,
+            }
+        )
+
+    response = StreamingResponse(_events(), media_type="application/x-ndjson")
+    response.set_cookie("vera_session_id", active_session, httponly=True, samesite="lax")
+    return response
+
+
 @app.post("/chat", response_class=HTMLResponse)
 async def chat(request: Request) -> HTMLResponse:
     """Typed Vera chat turn — thin Request→HTML wrapper over the canonical helper.
@@ -1850,6 +1998,131 @@ def _display_status_for_tts(tts_status: str, *, ok: bool) -> str:
     if tts_status == TTS_STATUS_SUCCEEDED:
         return "no_audio_artifact"
     return tts_status or "failed"
+
+
+@app.post("/chat/voice/stream")
+async def chat_voice_stream(request: Request) -> StreamingResponse:
+    content_type_header = request.headers.get("content-type")
+    if not _is_audio_content_type(content_type_header):
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Dictation upload requires an audio/* Content-Type.",
+        )
+    qp = request.query_params
+    session_id_raw = str(qp.get("session_id") or "").strip()
+    language = str(qp.get("language") or "").strip() or None
+    speak_response_raw = str(qp.get("speak_response") or "").strip().lower()
+    speak_response = speak_response_raw in {"1", "true", "on", "yes"}
+    active_session = (
+        session_id_raw or (request.cookies.get("vera_session_id") or "").strip() or new_session_id()
+    )
+    voice_flags = load_voice_foundation_flags()
+    if not voice_flags.voice_input_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Voice input is disabled by runtime flags.",
+        )
+    raw_body = await request.body()
+    if not raw_body:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Empty dictation upload."
+        )
+    if len(raw_body) > _VERA_DICTATION_MAX_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail="Audio body too large."
+        )
+
+    suffix = _audio_suffix_for(content_type_header)
+    tmp_fd, tmp_path = tempfile.mkstemp(prefix=_VERA_DICTATION_TEMP_PREFIX, suffix=suffix)
+    with os.fdopen(tmp_fd, "wb") as handle:
+        handle.write(raw_body)
+    try:
+        stt_response = await transcribe_audio_file_async(
+            audio_path=tmp_path,
+            flags=voice_flags,
+            language=language,
+            session_id=active_session,
+        )
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp_path)
+
+    stt_ok = bool(stt_response.status == STT_STATUS_SUCCEEDED and stt_response.transcript)
+    transcript = str(stt_response.transcript or "").strip()
+
+    async def _events():
+        yield _ndjson_line(
+            {
+                "type": "stt",
+                "session_id": active_session,
+                "ok": stt_ok,
+                "transcript": transcript if stt_ok else None,
+                "status": stt_response.status,
+                "stt": stt_response_as_dict(stt_response),
+            }
+        )
+        if not stt_ok or not transcript:
+            yield _ndjson_line({"type": "error", "status": "stt_failed"})
+            return
+        delta_chunks: list[str] = []
+
+        async def _relay(delta: str) -> None:
+            delta_chunks.append(delta)
+
+        task = asyncio.create_task(
+            run_vera_chat_turn(
+                message=transcript,
+                input_origin=InputOrigin.VOICE_TRANSCRIPT,
+                session_id=active_session,
+                voice_flags=voice_flags,
+                stream_delta_hook=_relay,
+            )
+        )
+        while not task.done():
+            while delta_chunks:
+                yield _ndjson_line({"type": "assistant_delta", "delta": delta_chunks.pop(0)})
+            await asyncio.sleep(0.01)
+        result = await task
+        while delta_chunks:
+            yield _ndjson_line({"type": "assistant_delta", "delta": delta_chunks.pop(0)})
+        if result.status == "stream_failed_after_partial":
+            yield _ndjson_line(
+                {
+                    "type": "error",
+                    "status": result.status,
+                    "error": result.error or result.assistant_text,
+                }
+            )
+            return
+        tts_url: str | None = None
+        if speak_response and result.assistant_text.strip():
+            try:
+                tts_response = await synthesize_text_async(
+                    text=result.assistant_text,
+                    flags=voice_flags,
+                    session_id=active_session,
+                )
+                if tts_response.status == TTS_STATUS_SUCCEEDED and tts_response.audio_path:
+                    token = _register_tts_audio(tts_response.audio_path)
+                    tts_url = f"/vera/voice/audio/{token}"
+            except Exception:
+                tts_url = None
+        yield _ndjson_line(
+            {
+                "type": "done",
+                "status": result.status,
+                "assistant_text": result.assistant_text,
+                "turns": result.turns,
+                "turn_count": len(result.turns),
+                "preview": result.preview,
+                "has_preview_truth": True,
+                "tts_url": tts_url,
+            }
+        )
+
+    response = StreamingResponse(_events(), media_type="application/x-ndjson")
+    response.set_cookie("vera_session_id", active_session, httponly=True, samesite="lax")
+    return response
 
 
 @app.post("/chat/voice")

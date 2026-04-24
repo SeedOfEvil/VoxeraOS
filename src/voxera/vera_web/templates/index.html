@@ -290,8 +290,67 @@
 
     if (form && sendBtn && textarea) {
 
+      const streamTypedTurn = async (msg) => {
+        const assistantBubble = document.createElement('article');
+        assistantBubble.className = 'bubble assistant';
+        const assistantRole = document.createElement('div');
+        assistantRole.className = 'role';
+        assistantRole.textContent = 'Vera';
+        const assistantText = document.createElement('div');
+        assistantText.className = 'text';
+        assistantText.dataset.streaming = 'true';
+        assistantBubble.appendChild(assistantRole);
+        assistantBubble.appendChild(assistantText);
+        thread.appendChild(assistantBubble);
+        thread.scrollTop = thread.scrollHeight;
+
+        const params = new URLSearchParams();
+        params.set('session_id', sessionId || '');
+        params.set('input_origin', 'typed');
+        params.set('message', msg);
+        const response = await fetch('/chat/stream', {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: params.toString(),
+          credentials: 'same-origin',
+        });
+        if (!response.ok || !response.body) throw new Error('stream unavailable');
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let streamed = '';
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            const event = JSON.parse(line);
+            if (event.type === 'assistant_delta') {
+              streamed += String(event.delta || '');
+              assistantText.textContent = streamed;
+            } else if (event.type === 'done') {
+              if (Array.isArray(event.turns)) {
+                window.__veraApplyServerTurns(event.turns, event.turn_count);
+              }
+              if (event.has_preview_truth === true) {
+                window.__veraApplyServerPreview(event.preview, sessionId);
+              }
+              return;
+            } else if (event.type === 'error') {
+              assistantText.textContent =
+                String(event.assistant_text || event.error || 'Streaming failed before completion.');
+              assistantText.dataset.streaming = 'false';
+              return;
+            }
+          }
+        }
+      };
+
       // Prevent double-send: disable controls on first submit
-      form.addEventListener('submit', (e) => {
+      form.addEventListener('submit', async (e) => {
         if (isSubmitting) {
           e.preventDefault();
           return;
@@ -301,6 +360,7 @@
           e.preventDefault();
           return;
         }
+        e.preventDefault();
         isSubmitting = true;
         sendBtn.disabled = true;
         sendBtn.classList.add('is-sending');
@@ -323,25 +383,21 @@
           userBubble.appendChild(userText);
           thread.appendChild(userBubble);
 
-          // Thinking indicator (createElement — no innerHTML)
-          const indicator = document.createElement('div');
-          indicator.className = 'thinking-indicator is-visible';
-          indicator.setAttribute('aria-live', 'polite');
-          const thinkRole = document.createElement('div');
-          thinkRole.className = 'thinking-role';
-          thinkRole.textContent = 'Vera';
-          const thinkContent = document.createElement('div');
-          thinkContent.className = 'thinking-content';
-          const dots = document.createElement('span');
-          dots.className = 'dots';
-          for (let i = 0; i < 3; i++) dots.appendChild(document.createElement('span'));
-          thinkContent.appendChild(dots);
-          thinkContent.appendChild(document.createTextNode('Thinking\u2026'));
-          indicator.appendChild(thinkRole);
-          indicator.appendChild(thinkContent);
-          thread.appendChild(indicator);
-
           thread.scrollTop = thread.scrollHeight;
+        }
+        try {
+          await streamTypedTurn(msg);
+          textarea.value = '';
+          textarea.style.height = 'auto';
+        } catch (_err) {
+          form.submit();
+          return;
+        } finally {
+          isSubmitting = false;
+          sendBtn.disabled = false;
+          sendBtn.classList.remove('is-sending');
+          textarea.readOnly = false;
+          textarea.focus();
         }
       });
 

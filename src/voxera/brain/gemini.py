@@ -106,6 +106,14 @@ class GeminiBrain:
         text = self._extract_text(data)
         return BrainResponse(text=text, tool_calls=[])
 
+    async def generate_stream(
+        self, messages: list[dict[str, str]], tools: list[ToolSpec] | None = None
+    ):
+        del messages, tools
+        if False:
+            yield ""
+        raise NotImplementedError("Gemini streaming is not wired in this adapter yet")
+
     async def capability_test(self) -> dict[str, Any]:
         start = time.time()
         messages = [

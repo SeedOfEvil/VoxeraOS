@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from ..brain.fallback import classify_fallback_reason
@@ -45,6 +46,10 @@ from .weather_flow import (
 
 PREVIEW_BUILDER_MODEL = "gemini-3-flash-preview"
 PREVIEW_BUILDER_FALLBACK_MODEL = "gemini-3.1-flash-lite-preview"
+
+
+class StreamInterruptedAfterPartialError(RuntimeError):
+    """Raised when provider streaming fails after yielding partial text."""
 
 
 class HiddenCompilerDecision:
@@ -456,6 +461,7 @@ async def generate_vera_reply(
     code_draft: bool = False,
     writing_draft: bool = False,
     weather_context: dict[str, Any] | None = None,
+    stream_delta_hook: Callable[[str], Awaitable[None]] | None = None,
 ) -> dict[str, Any]:
     cfg = load_app_config()
     web_cfg = cfg.web_investigation
@@ -525,6 +531,27 @@ async def generate_vera_reply(
     for name, provider in attempts:
         try:
             brain = _create_brain(provider)
+            if stream_delta_hook is not None:
+                emitted: list[str] = []
+                try:
+                    async for chunk in brain.generate_stream(messages, tools=[]):
+                        piece = str(chunk or "")
+                        if not piece:
+                            continue
+                        emitted.append(piece)
+                        await stream_delta_hook(piece)
+                    text = "".join(emitted).strip()
+                    if text:
+                        return {"answer": text, "status": f"ok:{name}"}
+                except NotImplementedError:
+                    emitted = []
+                except Exception as exc:
+                    if emitted:
+                        raise StreamInterruptedAfterPartialError(
+                            "Streaming failed after partial assistant output."
+                        ) from exc
+                # If streaming yielded nothing or is unsupported, fall back to
+                # canonical batch generation for truthful completion.
             response = await brain.generate(messages, tools=[])
             text = str(response.text or "").strip()
             if text:

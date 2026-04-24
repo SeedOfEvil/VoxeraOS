@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -104,6 +105,60 @@ class OpenAICompatBrain:
         text = choice.get("content") or ""
         tool_calls = choice.get("tool_calls") or []
         return BrainResponse(text=text, tool_calls=tool_calls)
+
+    async def generate_stream(
+        self, messages: list[dict[str, str]], tools: list[ToolSpec] | None = None
+    ):
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "messages": messages,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if tools:
+            payload["tools"] = [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.schema,
+                    },
+                }
+                for t in tools
+            ]
+            payload["tool_choice"] = "auto"
+
+        async with (
+            httpx.AsyncClient(timeout=self.timeout) as client,
+            client.stream(
+                "POST",
+                f"{self.base_url}/chat/completions",
+                headers=self._headers(),
+                json=payload,
+            ) as response,
+        ):
+            response.raise_for_status()
+            async for raw_line in response.aiter_lines():
+                line = (raw_line or "").strip()
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if not data or data == "[DONE]":
+                    continue
+                try:
+                    payload_obj = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                choices = payload_obj.get("choices")
+                if not isinstance(choices, list) or not choices:
+                    continue
+                delta = choices[0].get("delta")
+                if not isinstance(delta, dict):
+                    continue
+                chunk = str(delta.get("content") or "")
+                if chunk:
+                    yield chunk
 
     async def capability_test(self) -> dict[str, Any]:
         import time
