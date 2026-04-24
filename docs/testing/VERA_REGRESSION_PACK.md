@@ -457,6 +457,34 @@ Expected pass:
   - "authorize the file creation"
   - "preview pane"
 
+### Q) Referenced prior answer binding + content inspection + empty-content submit guard
+
+Prompt sequence:
+
+1. `Good morning Vera, give me a one sentence status check.`
+2. `Tell me a short story about spacetime.`
+3. `Create a file called typed-smoke-test.txt containing exactly what you just said`
+4. `Where is the content?`
+5. `submit it`
+
+Proves:
+
+- "what you just said" binds the latest meaningful assistant answer into `write_file.content` (no empty shell).
+- "Where is the content?" answers deterministically — path + content preview — with no LLM call and no vague "unchanged" wording.
+- An empty `write_file.content` cannot submit unless the goal explicitly requests an empty file.
+
+Expected pass:
+
+- step 3 preview path is `~/VoxeraOS/notes/typed-smoke-test.txt` and content contains the step-2 answer (non-empty).
+- step 4 response shows the path and a quoted content preview (truncates long bodies with a clear marker) — never responds "the draft was unchanged" vaguely.
+- step 5 submits via queue (non-empty content is allowed through the guard).
+
+Failure modes that must remain blocked:
+
+- empty write preview + `submit it` → fails closed with `handoff_empty_content_blocked`, queue inbox untouched, preview preserved.
+- explicit empty-file intent (`create an empty file called x.txt`, `touch x.txt`) → still allowed through the guard.
+- wrapper text ("I've prepared a preview…", "the draft is unchanged", "Your linked job completed…") → never saved as an authored artifact and never bound into `write_file.content`.
+
 ## 8) Automated coverage anchors
 
 The pack is represented by focused Vera tests (not one giant mixed-flow test):
@@ -465,5 +493,6 @@ The pack is represented by focused Vera tests (not one giant mixed-flow test):
 - `tests/test_vera_contextual_flows.py`
 - `tests/test_vera_session_characterization.py`
 - `tests/test_vera_runtime_validation_fixes.py`
+- `tests/test_vera_preview_content_truth.py` (content truth sweep — section Q above)
 
 Prefer extending those focused files for future Vera regression additions.

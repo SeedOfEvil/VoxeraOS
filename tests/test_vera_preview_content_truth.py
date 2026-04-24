@@ -575,3 +575,316 @@ class TestSharedPathReferenceSanity:
         assert message_requests_referenced_content(msg_typed) is True
         # Voice-normalized form still contains the reference phrase.
         assert message_requests_referenced_content(msg_voice) is True
+
+
+# ---------------------------------------------------------------------------
+# E. Rename / save-as preserves content (regression)
+# ---------------------------------------------------------------------------
+
+
+class TestRenamePreservesContent:
+    """Rename / save-as must change the path but never drop authored content
+    from the active preview.  Content-loss on rename would be a silent
+    regression the user could not see until after submit."""
+
+    def test_rename_preserves_nonempty_content(self) -> None:
+        active = {
+            "goal": "write a file called joke.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/joke.txt",
+                "content": "Why did the queue cross the road? To get to done.",
+                "mode": "overwrite",
+            },
+        }
+        payload = maybe_draft_job_payload(
+            "rename it to joke-renamed.txt",
+            active_preview=active,
+        )
+        assert isinstance(payload, dict)
+        wf = payload.get("write_file")
+        assert isinstance(wf, dict)
+        assert str(wf.get("path") or "").endswith("joke-renamed.txt")
+        assert str(wf.get("content") or "") == ("Why did the queue cross the road? To get to done.")
+
+    def test_save_as_preserves_nonempty_content(self) -> None:
+        active = {
+            "goal": "write a file called draft.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/draft.txt",
+                "content": "Authored body stays intact.",
+                "mode": "overwrite",
+            },
+        }
+        payload = maybe_draft_job_payload(
+            "save it as final.txt",
+            active_preview=active,
+        )
+        assert isinstance(payload, dict)
+        wf = payload.get("write_file")
+        assert isinstance(wf, dict)
+        assert str(wf.get("path") or "").endswith("final.txt")
+        assert str(wf.get("content") or "") == "Authored body stays intact."
+
+
+# ---------------------------------------------------------------------------
+# D. Active-draft content refresh
+# ---------------------------------------------------------------------------
+
+
+class TestActiveDraftContentRefresh:
+    """Section D: clear content-refresh requests on an active preview must
+    replace content (path preserved); ambiguous requests must fail closed."""
+
+    def test_different_joke_refresh_replaces_content(self) -> None:
+        from voxera.vera.draft_revision import _is_clear_content_refresh_request
+
+        assert _is_clear_content_refresh_request("tell me a different joke") is True
+        assert _is_clear_content_refresh_request("generate a different poem") is True
+        assert _is_clear_content_refresh_request("give me a shorter summary") is True
+
+    def test_ambiguous_change_request_fails_closed(self) -> None:
+        from voxera.vera.draft_revision import _is_ambiguous_change_request
+
+        # Bare change/fix/improve without a content type → ambiguous.
+        assert _is_ambiguous_change_request("change it") is True
+        assert _is_ambiguous_change_request("fix it") is True
+        assert _is_ambiguous_change_request("make it better") is True
+        # With a specific content type → not ambiguous, has a clear target.
+        assert _is_ambiguous_change_request("change the joke") is False
+
+    def test_ambiguous_change_on_active_preview_returns_none(self) -> None:
+        """'change it' on an active preview must not mutate anything —
+        the builder returns None so response-shaping can produce the
+        unchanged-with-reason reply."""
+        active = {
+            "goal": "write a file called draft.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/draft.txt",
+                "content": "Original authored body.",
+                "mode": "overwrite",
+            },
+        }
+        payload = maybe_draft_job_payload("change it", active_preview=active)
+        assert payload is None
+
+
+# ---------------------------------------------------------------------------
+# H. Empty-content submit — additional empty-file intent coverage
+# ---------------------------------------------------------------------------
+
+
+class TestEmptyFileIntentVariants:
+    """Explicit empty-file requests ('touch x.txt', 'create a blank file …')
+    must be recognised by the guard so they can submit through."""
+
+    def test_touch_intent_allowed(self) -> None:
+        assert _is_explicit_empty_file_intent("touch placeholder.txt") is True
+
+    def test_blank_intent_allowed(self) -> None:
+        assert _is_explicit_empty_file_intent("make a blank file called x.txt") is True
+
+    def test_empty_intent_allowed(self) -> None:
+        assert _is_explicit_empty_file_intent("create an empty file called x.txt") is True
+
+    def test_zero_byte_intent_allowed(self) -> None:
+        assert _is_explicit_empty_file_intent("create a zero-byte file called x.txt") is True
+
+    def test_normal_content_intent_not_allowed(self) -> None:
+        assert _is_explicit_empty_file_intent("write a file with a joke") is False
+        assert _is_explicit_empty_file_intent("save that answer") is False
+
+
+# ---------------------------------------------------------------------------
+# F+J. Additional wrapper / status exclusion coverage
+# ---------------------------------------------------------------------------
+
+
+class TestAdditionalWrapperExclusion:
+    """Additional wrapper / status / control phrasings must never bind as
+    authored content."""
+
+    def test_let_me_know_when_ready_is_non_authored(self) -> None:
+        text = "Let me know when you're ready to save it."
+        assert looks_like_non_authored_assistant_message(text) is True
+
+    def test_nothing_submitted_is_non_authored(self) -> None:
+        text = "Nothing has been submitted yet."
+        assert looks_like_non_authored_assistant_message(text) is True
+
+    def test_preview_only_is_non_authored(self) -> None:
+        text = "This is preview-only — review or refine it."
+        assert looks_like_non_authored_assistant_message(text) is True
+
+    def test_i_submitted_job_is_non_authored(self) -> None:
+        text = "I submitted the job to VoxeraOS. Job id: abc-123."
+        assert looks_like_non_authored_assistant_message(text) is True
+
+    def test_approval_status_is_non_authored(self) -> None:
+        text = "approval status: awaiting operator review"
+        assert looks_like_non_authored_assistant_message(text) is True
+
+
+# ---------------------------------------------------------------------------
+# I. Additional content-inspection phrasing
+# ---------------------------------------------------------------------------
+
+
+class TestAdditionalContentInspectionPhrasings:
+    def _dispatch(self, *, message: str, queue_root: Path, session_id: str):
+        return dispatch_early_exit_intent(
+            message=message,
+            diagnostics_service_turn=False,
+            requested_job_id=None,
+            should_attempt_derived_save=False,
+            session_investigation=None,
+            session_derived_output=None,
+            queue_root=queue_root,
+            session_id=session_id,
+        )
+
+    def test_what_are_you_going_to_write_matches(self, tmp_path: Path) -> None:
+        queue = tmp_path / "queue"
+        session_id = "vera-inspection-what-write"
+        vera_session_store.write_session_preview(
+            queue,
+            session_id,
+            {
+                "goal": "write a file",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/note.txt",
+                    "content": "authored body",
+                    "mode": "overwrite",
+                },
+            },
+        )
+        result = self._dispatch(
+            message="What are you going to write?",
+            queue_root=queue,
+            session_id=session_id,
+        )
+        assert result.matched is True
+        assert result.status == "ok:preview_content_inspection"
+        assert "authored body" in result.assistant_text
+
+    def test_whats_in_the_preview_matches(self, tmp_path: Path) -> None:
+        queue = tmp_path / "queue"
+        session_id = "vera-inspection-whats-in"
+        vera_session_store.write_session_preview(
+            queue,
+            session_id,
+            {
+                "goal": "write a file",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/note.txt",
+                    "content": "body",
+                    "mode": "overwrite",
+                },
+            },
+        )
+        result = self._dispatch(
+            message="What's in the preview?",
+            queue_root=queue,
+            session_id=session_id,
+        )
+        assert result.matched is True
+        assert result.status == "ok:preview_content_inspection"
+
+    def test_plain_conversational_message_does_not_match_inspection(self, tmp_path: Path) -> None:
+        """Regression: the inspection regex must be specific enough that
+        normal conversational turns do not get hijacked into inspection."""
+        queue = tmp_path / "queue"
+        session_id = "vera-inspection-no-hijack"
+        vera_session_store.write_session_preview(
+            queue,
+            session_id,
+            {
+                "goal": "write a file",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/note.txt",
+                    "content": "body",
+                    "mode": "overwrite",
+                },
+            },
+        )
+        # Ordinary conversational messages that should flow to normal orchestration.
+        for msg in (
+            "Hello Vera!",
+            "What time is it?",
+            "Tell me a joke.",
+            "Good morning!",
+        ):
+            result = self._dispatch(
+                message=msg,
+                queue_root=queue,
+                session_id=session_id,
+            )
+            assert not (
+                result.matched is True
+                and result.status
+                in {
+                    "ok:preview_content_inspection",
+                    "ok:preview_content_inspection_empty",
+                }
+            ), f"Inspection must not hijack ordinary message: {msg!r}"
+
+
+# ---------------------------------------------------------------------------
+# Session-store integration — append_session_turn should register only
+# meaningful assistant artifacts (filters wrappers & partial deltas).
+# ---------------------------------------------------------------------------
+
+
+class TestSessionTurnArtifactRegistration:
+    def test_meaningful_assistant_turn_registered(self, tmp_path: Path) -> None:
+        queue = tmp_path / "queue"
+        session_id = "vera-session-register-meaningful"
+        vera_session_store.append_session_turn(
+            queue,
+            session_id,
+            role="assistant",
+            text=_spacetime_answer(),
+        )
+        artifacts = vera_session_store.read_session_saveable_assistant_artifacts(queue, session_id)
+        assert len(artifacts) == 1
+        assert (
+            "spacetime" in artifacts[0]["content"].lower()
+            or "worldline" in artifacts[0]["content"].lower()
+        )
+
+    def test_wrapper_assistant_turn_not_registered(self, tmp_path: Path) -> None:
+        queue = tmp_path / "queue"
+        session_id = "vera-session-register-wrapper"
+        vera_session_store.append_session_turn(
+            queue,
+            session_id,
+            role="assistant",
+            text=(
+                "I've prepared a preview with this content. "
+                "This is preview-only — nothing has been submitted yet."
+            ),
+        )
+        artifacts = vera_session_store.read_session_saveable_assistant_artifacts(queue, session_id)
+        assert artifacts == []
+
+    def test_latest_meaningful_turn_wins_after_wrapper(self, tmp_path: Path) -> None:
+        """Stale-content prevention: even if the latest raw assistant text is
+        a wrapper, the registry only holds meaningful artifacts, so a later
+        reference phrase resolves to the real prior answer."""
+        queue = tmp_path / "queue"
+        session_id = "vera-session-register-stale-safe"
+        vera_session_store.append_session_turn(
+            queue,
+            session_id,
+            role="assistant",
+            text=_spacetime_answer(),
+        )
+        vera_session_store.append_session_turn(
+            queue,
+            session_id,
+            role="assistant",
+            text="I've prepared a preview. This is preview-only.",
+        )
+        artifacts = vera_session_store.read_session_saveable_assistant_artifacts(queue, session_id)
+        assert len(artifacts) == 1
+        content = artifacts[0]["content"].lower()
+        assert "spacetime" in content or "worldline" in content

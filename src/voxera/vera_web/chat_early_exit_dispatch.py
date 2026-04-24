@@ -143,7 +143,7 @@ _PREVIEW_CONTENT_INSPECTION_RE = re.compile(
     r"where\s+is\s+(?:the\s+)?(?:preview\s+)?content"
     r"|show\s+(?:me\s+)?(?:the\s+)?(?:current\s+)?(?:preview\s+)?content"
     r"|what\s+content\s+is\s+in\s+(?:the\s+)?(?:draft|preview)"
-    r"|what\s+(?:is\s+in|'?s\s+in)\s+(?:the\s+)?(?:current\s+)?(?:draft|preview)"
+    r"|what(?:\s+is|'?s)\s+in\s+(?:the\s+)?(?:current\s+)?(?:draft|preview)"
     r"|show\s+(?:current\s+)?preview\s+content"
     r"|what\s+are\s+you\s+going\s+to\s+write"
     r"|what\s+will\s+(?:be\s+)?(?:written|saved)"
