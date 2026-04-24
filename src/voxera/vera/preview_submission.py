@@ -10,6 +10,17 @@ from ..core.inbox import add_inbox_payload
 from . import session_store
 from .draft_revision import looks_like_preview_rename_or_save_as_request
 
+_EXPLICIT_EMPTY_FILE_RE = re.compile(
+    r"\b(empty|blank|touch|zero[- ]byte|zero\s+byte)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_explicit_empty_file_intent(goal: str) -> bool:
+    """Return True when the goal explicitly requests an empty/blank file."""
+    return bool(_EXPLICIT_EMPTY_FILE_RE.search(goal))
+
+
 _ALLOWED_TOP_LEVEL_KEYS = {
     "goal",
     "title",
@@ -297,6 +308,30 @@ def submit_active_preview_for_session(
             "I don’t have a prepared preview in this session yet, so I did not submit anything to VoxeraOS.",
             "handoff_missing_preview",
         )
+
+    # Fail closed when a write_file preview has empty content without an
+    # explicit empty-file intent.  Submitting an empty file silently is a
+    # trust violation — the user asked for content that never materialized.
+    _preview_write_file = preview_to_submit.get("write_file")
+    if isinstance(_preview_write_file, dict):
+        _preview_content = str(_preview_write_file.get("content") or "").strip()
+        _preview_goal = str(preview_to_submit.get("goal") or "")
+        if not _preview_content and not _is_explicit_empty_file_intent(_preview_goal):
+            session_store.write_session_handoff_state(
+                queue_root,
+                session_id,
+                attempted=False,
+                queue_path=str(queue_root),
+                status="empty_content_blocked",
+                error="write_file.content is empty without explicit empty-file intent",
+            )
+            return (
+                "I did not submit the job because the write preview has no content. "
+                "The file content is empty — please provide the content to write "
+                "before submitting. If you meant to create an empty file, "
+                "say so explicitly (e.g. “create an empty file called x.txt”).",
+                "handoff_empty_content_blocked",
+            )
 
     try:
         ack = submit_preview_hook(queue_root=queue_root, payload=preview_to_submit)

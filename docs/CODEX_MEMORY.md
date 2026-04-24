@@ -1,3 +1,22 @@
+## 2026-04-24 — fix(vera): harden preview content binding and truth guards
+
+- **Regression**: after a meaningful assistant answer, "Create a file called typed-smoke-test.txt containing exactly what you just said" produced a governed preview with `write_file.content = ""` and Vera later answered "Where is the content?" with vague "draft unchanged" wording instead of exposing the empty state.
+- **Root cause (reference detection gap)** (`src/voxera/vera/saveable_artifacts.py`):
+  - `message_requests_referenced_content()` did not recognise "what you just said" / "what you said" / "save what you just said" / "containing exactly what you just said". The first-gate regex only admitted `that|this|it|previous|last|your` — "you" was absent. The second pattern bank also did not include the "what you said" family.
+  - With no reference match, the structured-write builder fell through to `_infer_content_from_message()` (which returns `None` here) and landed on `content = ""`, producing an empty governed preview.
+  - Fix: added `you` to the first gate and added patterns `what\s+you\s+(?:just\s+)?said`, `exactly\s+what\s+you\s+(?:just\s+)?said`, `containing\s+(?:exactly\s+)?what\s+you\s+(?:just\s+)?said`, `save\s+what\s+you\s+(?:just\s+)?said`. Also broadened `your\s+previous\s+…` to `your\s+(?:previous|last)\s+…` for symmetry.
+  - Also added wrapper-exclusion patterns so Vera never saves its own "I left the active draft … unchanged", "the draft is unchanged", or "I could not resolve …" control-text as a saveable artifact.
+- **Active-preview content inspection** (`src/voxera/vera_web/chat_early_exit_dispatch.py`):
+  - Added deterministic early-exit for "Where is the content?", "Show me the content", "What content is in the draft?", "What are you going to write?", "Show me the draft". Reads the session preview directly and returns path + content (truncated with a clear marker past 800 chars) when present, an explicit "content is empty … should not be submitted until the content is provided" when the preview shell exists but is empty, and "There is no active write preview" otherwise. No LLM call on these turns.
+  - Placed BEFORE the stale-draft reference check so "what content is in the draft?" inspects real state instead of failing closed on missing `active_draft_ref`.
+- **Empty-content submit fail-closed guard** (`src/voxera/vera/preview_submission.py`):
+  - `submit_active_preview_for_session()` now rejects submission when `write_file.content` is empty and the goal does not explicitly request an empty/blank/touch file. Writes `handoff_empty_content_blocked` to the session handoff state and does NOT touch queue inbox. Preview is preserved for the user to correct.
+  - Explicit empty-file intents ("create an empty file called x.txt", "touch x.txt", "make a blank file") are still allowed through.
+- **Tests** (`tests/test_vera_preview_content_truth.py`, new): 38 regression tests covering referenced assistant-content binding (including "what you just said"), explicit literal binding ("containing exactly: …"), wrapper-exclusion filters, empty-content fail-closed at submit (blocked + allowed-empty + non-empty), active-preview content inspection (non-empty / empty / no-preview / long-truncate), stale content prevention (latest artifact wins; wrapper-only artifact pool is safe), saveable artifact registry sanity, and shared-path parity between typed and voice-origin reference phrases.
+- **Scope preserved**: no changes to queue/daemon/panel/STT/TTS. Preview ownership, submit semantics, lane precedence, and session-context-as-continuity-aid rules are unchanged. The empty-content guard sits at the submit boundary (authoritative truth surface) — queue intake is never called with an empty governed preview unless intent is explicit.
+
+---
+
 ## 2026-04-19 — perf(voice): reduce canonical Vera dictation latency and surface stage timings
 
 - **Motivation**: end-to-end voice round trip on canonical Vera (`POST /chat/voice`) felt too slow in practice even though STT model selection, previews, lifecycle flows, and trust boundaries were all working.  Operators needed (a) visibility into where time is going and (b) a first bounded latency reduction without weakening the trust model.

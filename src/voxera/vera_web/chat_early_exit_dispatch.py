@@ -81,7 +81,7 @@ from ..vera.reference_resolver import (
     classify_reference,
     resolve_job_id_from_context,
 )
-from ..vera.session_store import read_session_handoff_state
+from ..vera.session_store import read_session_handoff_state, read_session_preview
 from ..vera.time_context import answer_time_question
 
 
@@ -136,6 +136,52 @@ def _followup_evidence_detail(evidence: ReviewedJobEvidence) -> str:
     if evidence.state == "canceled":
         return "Prior state: canceled (not failed)"
     return f"Prior state: {evidence.state}"
+
+
+_PREVIEW_CONTENT_INSPECTION_RE = re.compile(
+    r"\b("
+    r"where\s+is\s+(?:the\s+)?(?:preview\s+)?content"
+    r"|show\s+(?:me\s+)?(?:the\s+)?(?:current\s+)?(?:preview\s+)?content"
+    r"|what\s+content\s+is\s+in\s+(?:the\s+)?(?:draft|preview)"
+    r"|what\s+(?:is\s+in|'?s\s+in)\s+(?:the\s+)?(?:current\s+)?(?:draft|preview)"
+    r"|show\s+(?:current\s+)?preview\s+content"
+    r"|what\s+are\s+you\s+going\s+to\s+write"
+    r"|what\s+will\s+(?:be\s+)?(?:written|saved)"
+    r"|show\s+me\s+(?:the\s+)?draft"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_PREVIEW_CONTENT_INSPECTION_TRUNCATE = 800
+
+
+def _summarise_preview_content(preview: dict[str, object]) -> str:
+    """Return a deterministic, human-readable description of a write_file preview."""
+    write_file = preview.get("write_file")
+    if not isinstance(write_file, dict):
+        goal = str(preview.get("goal") or "").strip()
+        return f"Active preview: {goal}" if goal else "An active non-file preview is ready."
+
+    path = str(write_file.get("path") or "").strip()
+    content = str(write_file.get("content") or "").strip()
+
+    if not content:
+        path_hint = f" for `{path}`" if path else ""
+        return (
+            f"The active write preview{path_hint} has no content yet. "
+            "The file content is empty and should not be submitted until "
+            "the content is provided."
+        )
+
+    path_line = f"**Path:** `{path}`\n" if path else ""
+    if len(content) > _PREVIEW_CONTENT_INSPECTION_TRUNCATE:
+        shown = content[:_PREVIEW_CONTENT_INSPECTION_TRUNCATE]
+        remaining = len(content) - _PREVIEW_CONTENT_INSPECTION_TRUNCATE
+        content_block = f"```\n{shown}\n```\n*(truncated — {remaining} more characters)*"
+    else:
+        content_block = f"```\n{content}\n```"
+
+    return f"**Active write preview**\n\n{path_line}\n**Content:**\n{content_block}"
 
 
 _AUTHORED_DRAFTING_SIGNAL_RE = re.compile(
@@ -552,7 +598,31 @@ def dispatch_early_exit_intent(
             status="near_miss_submit_rejected",
         )
 
-    # ── 11. Stale draft reference (fail-closed) ────────────────────────────
+    # ── 11. Active preview content inspection (deterministic) ────────────────
+    # Phrases like "Where is the content?", "Show me the content",
+    # "What content is in the draft?" must never fall through to the LLM
+    # (which would produce a vague "unchanged" reply) — answer directly from
+    # the session preview.  Placed BEFORE the stale-draft reference check
+    # because inspection phrasing may reference "the draft/preview" even
+    # though the intent is a legitimate read-only query.
+    if _PREVIEW_CONTENT_INSPECTION_RE.search(message):
+        active_preview = read_session_preview(queue_root, session_id)
+        if not isinstance(active_preview, dict):
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=(
+                    "There is no active write preview in this session. "
+                    "Create a file or note preview first, then you can inspect its content."
+                ),
+                status="ok:preview_content_inspection_empty",
+            )
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=_summarise_preview_content(active_preview),
+            status="ok:preview_content_inspection",
+        )
+
+    # ── 12. Stale draft reference (fail-closed) ────────────────────────────
     # When the message contains an explicit draft-class reference phrase
     # ("save that draft", "the draft", etc.) but session context has no
     # active draft or preview, fail closed rather than letting the builder

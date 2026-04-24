@@ -12,7 +12,8 @@ _LOW_INFORMATION_ASSISTANT_PATTERNS = (
 
 def message_requests_referenced_content(message: str) -> bool:
     lowered = message.lower()
-    if not re.search(r"\b(that|this|it|previous|last|your)\b", lowered):
+    # Include "you" to catch "what you just said" / "what you said" phrases.
+    if not re.search(r"\b(that|this|it|previous|last|your|you)\b", lowered):
         return False
     return bool(
         re.search(
@@ -30,15 +31,19 @@ def message_requests_referenced_content(message: str) -> bool:
             r"make\s+that\s+a\s+note|"
             r"(?:the\s+)?previous\s+(?:summary|response|answer|explanation)|"
             r"(?:the\s+)?last\s+(?:summary|response|answer|explanation)|"
-            r"your\s+previous\s+(?:summary|response|answer|explanation)|"
+            r"your\s+(?:previous|last)\s+(?:summary|response|answer|explanation)|"
             r"that\s+into\s+(?:a\s+)?(?:file|note)|"
             r"save\s+that\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
             r"save\s+that\s+to\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
             r"put\s+that\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
-            r"write\s+your\s+previous\s+(?:answer|response|summary|explanation)\s+to\s+(?:a\s+)?file|"
+            r"write\s+your\s+(?:previous|last)\s+(?:answer|response|summary|explanation)\s+to\s+(?:a\s+)?file|"
             r"use\s+your\s+previous\s+response|"
             r"put\s+that\s+into\s+(?:a\s+)?file|"
-            r"use\s+that\s+as\s+(?:the\s+)?content"
+            r"use\s+that\s+as\s+(?:the\s+)?content|"
+            r"what\s+you\s+(?:just\s+)?said\b|"
+            r"save\s+what\s+you\s+(?:just\s+)?said\b|"
+            r"containing\s+(?:exactly\s+)?what\s+you\s+(?:just\s+)?said\b|"
+            r"exactly\s+what\s+you\s+(?:just\s+)?said\b"
             r")\b",
             lowered,
         )
@@ -90,6 +95,14 @@ def looks_like_non_authored_assistant_message(text: str) -> bool:
     if re.search(r"\bi(?:'ve| have)\s+updated\s+the\s+draft\b", lowered):
         return True
     if re.search(r"\bupdated\s+the\s+draft\s+for\b", lowered):
+        return True
+    if re.search(r"\bi\s+left\s+the\s+active\s+draft\b", lowered):
+        return True
+    if re.search(
+        r"\bthe\s+(?:active\s+)?draft\s+(?:content\s+)?(?:is\s+|was\s+)?unchanged\b", lowered
+    ):
+        return True
+    if re.search(r"\bi\s+could\s+not\s+resolve\b", lowered):
         return True
     if re.search(r"\blet me know when you(?:'re| are)\s+ready\s+to\s+save\b", lowered):
         return True
