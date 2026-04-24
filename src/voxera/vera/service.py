@@ -557,6 +557,8 @@ async def generate_vera_reply(
             if text:
                 return {"answer": text, "status": f"ok:{name}"}
         except Exception as exc:
+            if isinstance(exc, StreamInterruptedAfterPartialError):
+                raise
             last_reason = classify_fallback_reason(exc)
             continue
 
