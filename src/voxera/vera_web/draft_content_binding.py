@@ -456,9 +456,16 @@ def resolve_draft_content_binding(  # noqa: C901
         )
         _new_addition = (reply_text_draft or "").strip()
         if isinstance(_existing_wf, dict) and _existing_content.strip() and _new_addition:
-            # Sanity: reject wrapper / status / control narration addition
-            # so the LLM's "I've added N jokes" claim never lands in content.
-            if looks_like_non_authored_assistant_message(_new_addition):
+            # Sanity 1: reject wrapper / status / control narration so it
+            # never lands in file content as authored body.
+            # Sanity 2: reject LLM replies that are PURE preview-update
+            # claims ("I've added 10 more dad jokes to the list.") with no
+            # actual additional authored content — appending such a reply
+            # would write the false claim verbatim into the saved file.
+            _looks_like_pure_claim = looks_like_preview_update_claim(_new_addition) and (
+                len(_new_addition.split()) < 30
+            )
+            if looks_like_non_authored_assistant_message(_new_addition) or _looks_like_pure_claim:
                 generation_content_refresh_failed_closed = True
             else:
                 # Best-effort dedupe: if the LLM replied with the full new

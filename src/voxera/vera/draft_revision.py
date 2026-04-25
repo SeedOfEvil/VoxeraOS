@@ -544,6 +544,13 @@ _COUNT_TOKEN = "(?:" + "|".join(_COUNT_TOKEN_ALTS) + ")"
 # "add 10 MORE jokes", "added 20 ADDITIONAL jokes", "append 5 NEW bullets".
 _COUNT_FILLER = r"(?:more|additional|new|extra|further|another)"
 
+# Allow up to two optional adjectives between the count/filler and the item
+# noun so phrases like "add 10 more DAD jokes", "append 5 more BULLET POINTS",
+# "add 3 more GOOD examples" all match.  Each adjective is a single
+# lowercase word with optional hyphens (e.g. "dad", "bullet", "good", "well-
+# tested").  Bounded to 2 to avoid runaway matching.
+_OPTIONAL_ADJECTIVES = r"(?:[a-z][a-z-]*\s+){0,2}"
+
 _ITEM_NOUN_PATTERN = (
     r"(?:item|bullet|bullet\s+point|example|line|entry|point|fact|"
     r"story|poem|joke|jokee|jokey|jokees|jokeys|stanza|verse|paragraph|sentence|"
@@ -553,21 +560,21 @@ _ITEM_NOUN_PATTERN = (
 
 _EXPAND_COUNT_DIGIT_RE = re.compile(
     rf"\b(?:add|append|include|with|expand\s+with)\s+(\d{{1,3}})\s+"
-    rf"(?:{_COUNT_FILLER}\s+)?{_ITEM_NOUN_PATTERN}\b",
+    rf"(?:{_COUNT_FILLER}\s+)?{_OPTIONAL_ADJECTIVES}{_ITEM_NOUN_PATTERN}\b",
     re.IGNORECASE,
 )
 
 _EXPAND_COUNT_WORD_RE = re.compile(
     rf"\b(?:add|append|include|with|expand\s+with)\s+({_COUNT_TOKEN})\s+"
-    rf"(?:{_COUNT_FILLER}\s+)?{_ITEM_NOUN_PATTERN}\b",
+    rf"(?:{_COUNT_FILLER}\s+)?{_OPTIONAL_ADJECTIVES}{_ITEM_NOUN_PATTERN}\b",
     re.IGNORECASE,
 )
 
 _EXPAND_INTENT_RE = re.compile(
     r"(?:"
-    # "add/append/include [N] more <item>s [to the list/content/file/draft]"
+    # "add/append/include [N] [more] [adj]* <item>s [to the list/content/...]"
     rf"\b(?:add|append|include)\s+(?:{_COUNT_TOKEN}\s+)?"
-    rf"(?:{_COUNT_FILLER}\s+)?{_ITEM_NOUN_PATTERN}"
+    rf"(?:{_COUNT_FILLER}\s+)?{_OPTIONAL_ADJECTIVES}{_ITEM_NOUN_PATTERN}"
     r"(?:\s+to\s+(?:the\s+|this\s+|that\s+)?(?:list|content|note|file|draft|end))?"
     # "continue the list/note/content/draft/writing"
     r"|\bcontinue\s+(?:the\s+|this\s+|that\s+)?"

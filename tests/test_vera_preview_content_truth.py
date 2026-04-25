@@ -1336,3 +1336,211 @@ class TestResponseShapingFalseSuccessClaimReplacement:
         # "I added a link" is natural conversation, not a preview update claim.
         assert looks_like_preview_update_claim("I added a link in my message.") is False
         assert looks_like_preview_update_claim("Thanks for the info.") is False
+
+
+# ---------------------------------------------------------------------------
+# M. Phrase-variant coverage for active-preview content edits
+# ---------------------------------------------------------------------------
+
+
+class TestActivePreviewExpandPhraseVariants:
+    """The user reported these exact phrasings landing on a 'draft unchanged'
+    reply.  Each must be detected as an expand intent (so the binding layer
+    has a chance to mutate or fail closed honestly), and the false-claim
+    detector must catch the LLM's verbatim narration even with adjective
+    fillers like 'dad jokes'."""
+
+    def test_polite_prefix_with_adjective_phrase_matches(self) -> None:
+        from voxera.vera.draft_revision import is_active_preview_content_expand_request
+
+        for phrase in (
+            "add 10 more jokes",
+            "add 10 more jokes to the content",
+            "please add 10 more dad jokes to the list",
+            "please add 10 more dad jokes to the note content",
+            "add 5 more bullet points to the list",
+            "append 3 more good examples",
+        ):
+            assert is_active_preview_content_expand_request(phrase) is True, (
+                f"expand intent must match: {phrase!r}"
+            )
+
+    def test_added_with_adjective_filler_caught_as_claim(self) -> None:
+        from voxera.vera_web.conversational_checklist import looks_like_preview_update_claim
+
+        for claim in (
+            "I've added 10 more dad jokes to the list.",
+            "I added 5 more good examples.",
+            "I've appended 3 more bullet points.",
+            "Added 10 more dad jokes to the note.",
+        ):
+            assert looks_like_preview_update_claim(claim) is True, (
+                f"false-claim detector must catch: {claim!r}"
+            )
+
+
+class TestActivePreviewExpandIntegration:
+    """End-to-end through the FastAPI test client.  These are the closest
+    proxy to the real browser flow that exposed the regression."""
+
+    @staticmethod
+    def _set_queue_root(monkeypatch, queue):
+        from types import SimpleNamespace
+
+        from voxera.vera_web import app as vera_app_module
+
+        monkeypatch.setattr(
+            vera_app_module,
+            "load_runtime_config",
+            lambda: SimpleNamespace(queue_root=queue),
+        )
+
+    @staticmethod
+    def _initial_jokes() -> str:
+        return (
+            "1. Why did the scarecrow win an award? He was outstanding in his field.\n"
+            "2. Why don't scientists trust atoms? They make up everything.\n"
+            "3. What do you call a fish without eyes? A fsh.\n"
+            "4. I told my wife she was drawing her eyebrows too high. She looked surprised.\n"
+            "5. Parallel lines have so much in common. It's a shame they'll never meet.\n"
+            "6. I'm reading a book on anti-gravity; it's impossible to put down.\n"
+            "7. Why did the bicycle fall over? It was two tired.\n"
+            "8. How does a penguin build its house? Igloos it together.\n"
+            "9. I would avoid sushi if I were you. It's a little fishy.\n"
+            "10. Why did the programmer quit? He didn't get arrays."
+        )
+
+    def _install_jokekster_preview(self, queue, sid):
+        initial = {
+            "goal": "write a file called jokekster.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/jokekster.txt",
+                "content": self._initial_jokes(),
+                "mode": "overwrite",
+            },
+        }
+        vera_session_store.write_session_preview(queue, sid, initial)
+        return initial
+
+    def test_full_body_llm_reply_appends_to_preview(self, tmp_path, monkeypatch):
+        from fastapi.testclient import TestClient
+
+        from voxera.vera_web import app as vera_app_module
+
+        queue = tmp_path / "queue"
+        self._set_queue_root(monkeypatch, queue)
+        client = TestClient(vera_app_module.app)
+        client.get("/")
+        sid = client.cookies.get("vera_session_id") or ""
+        self._install_jokekster_preview(queue, sid)
+
+        async def _fake_reply(*, turns, user_message, **_kw):
+            return {
+                "answer": (
+                    "Here are 10 more dad jokes:\n\n"
+                    "11. Why don't skeletons fight each other? They don't have the guts.\n"
+                    "12. What's brown and sticky? A stick.\n"
+                    "13. I'm afraid for the calendar. Its days are numbered."
+                ),
+                "status": "ok:test",
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+        res = client.post("/chat", data={"session_id": sid, "message": "add 10 more jokes"})
+        assert res.status_code == 200
+
+        final_preview = vera_session_store.read_session_preview(queue, sid)
+        assert isinstance(final_preview, dict)
+        final_wf = final_preview["write_file"]
+        # Path preserved.
+        assert final_wf["path"] == "~/VoxeraOS/notes/jokekster.txt"
+        # Content grew.
+        assert len(final_wf["content"]) > len(self._initial_jokes())
+        # Original jokes still present.
+        assert "scarecrow" in final_wf["content"]
+        # New jokes appended.
+        assert "skeletons fight" in final_wf["content"]
+
+    def test_pure_claim_llm_reply_fails_closed_honestly(self, tmp_path, monkeypatch):
+        """When the LLM only asserts 'I've added 10 more dad jokes' without
+        any actual joke text, the binding must reject it (no false content),
+        the preview must stay unchanged, and the user must see an honest
+        'draft unchanged' reply (not the false count claim)."""
+        from fastapi.testclient import TestClient
+
+        from voxera.vera_web import app as vera_app_module
+
+        queue = tmp_path / "queue"
+        self._set_queue_root(monkeypatch, queue)
+        client = TestClient(vera_app_module.app)
+        client.get("/")
+        sid = client.cookies.get("vera_session_id") or ""
+        self._install_jokekster_preview(queue, sid)
+
+        async def _fake_reply(*, turns, user_message, **_kw):
+            return {
+                "answer": "I've added 10 more dad jokes to the list.",
+                "status": "ok:test",
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+        res = client.post(
+            "/chat",
+            data={"session_id": sid, "message": "please add 10 more dad jokes to the list"},
+        )
+        assert res.status_code == 200
+
+        # Content unchanged.
+        final_preview = vera_session_store.read_session_preview(queue, sid)
+        assert isinstance(final_preview, dict)
+        assert final_preview["write_file"]["content"] == self._initial_jokes()
+
+        # Honest fail-closed surface.
+        body = res.text.lower()
+        assert (
+            "could not safely update" in body
+            or "draft is still in the preview, unchanged" in body
+            or "left the active draft content unchanged" in body
+        )
+        # False count claim must not leak verbatim.
+        assert "added 10 more dad jokes" not in body
+
+    def test_phrase_variants_all_route_to_expand_path(self, tmp_path, monkeypatch):
+        """Each user-reported phrasing must route to the expand binding path
+        rather than falling through to a generic 'unchanged' reply with no
+        binding attempt."""
+        from fastapi.testclient import TestClient
+
+        from voxera.vera_web import app as vera_app_module
+
+        queue = tmp_path / "queue"
+        self._set_queue_root(monkeypatch, queue)
+        client = TestClient(vera_app_module.app)
+        client.get("/")
+        sid = client.cookies.get("vera_session_id") or ""
+
+        async def _fake_reply(*, turns, user_message, **_kw):
+            return {
+                "answer": "11. A new joke about queues.\n12. Another joke about caches.",
+                "status": "ok:test",
+            }
+
+        monkeypatch.setattr(vera_app_module, "generate_vera_reply", _fake_reply)
+
+        for phrase in (
+            "add 10 more jokes",
+            "add 10 more jokes to the content",
+            "please add 10 more dad jokes to the list",
+            "please add 10 more dad jokes to the note content",
+        ):
+            # Reset preview each iteration so we can verify each phrase
+            # independently produces a content mutation.
+            self._install_jokekster_preview(queue, sid)
+            res = client.post("/chat", data={"session_id": sid, "message": phrase})
+            assert res.status_code == 200
+            final = vera_session_store.read_session_preview(queue, sid)
+            assert isinstance(final, dict)
+            content = str(final["write_file"]["content"])
+            assert "queue" in content.lower() or "cache" in content.lower(), (
+                f"phrase {phrase!r} did not route to the expand binding path"
+            )

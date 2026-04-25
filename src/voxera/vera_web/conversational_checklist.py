@@ -89,11 +89,13 @@ def looks_like_preview_update_claim(text: str) -> bool:
         return True
     # Numeric "added N <items>" / "appended N <items>" false-success claims.
     # "I've added 20 jokes", "appended 5 bullets", "added 20 additional jokes",
-    # "this brings the total to 30".  Allows filler adjectives between count
-    # and item noun (more | additional | new | extra | further | another).
+    # "added 10 more dad jokes", "this brings the total to 30".  Allows filler
+    # adjectives (more|additional|new|extra|further|another) and up to two
+    # arbitrary descriptive adjectives between the count and the item noun.
     if re.search(
         r"\b(?:added|appended|extended|expanded\s+with)\s+\d+\s+"
         r"(?:(?:more|additional|new|extra|further|another)\s+)?"
+        r"(?:[a-z][a-z-]*\s+){0,2}"
         r"(?:jokes?|jokees?|jokeys?|items?|bullets?|examples?|lines?|entries?|"
         r"points?|facts?|stories?|poems?|things?|stanzas?|verses?|paragraphs?|"
         r"sentences?|steps?|ideas?|tips?|quotes?|rows?)\b",
