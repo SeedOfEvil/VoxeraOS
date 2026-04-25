@@ -9,8 +9,7 @@ _LOW_INFORMATION_ASSISTANT_PATTERNS = (
     r"^(?:thanks|thank you|thank-you)[.!]*$",
 )
 
-# Trailing control/workflow phrases that should not appear in saved file content.
-# These are matched against lines at the END of assistant content.
+# Matched only against trailing lines — never stripped from mid-content.
 _TRAILING_CONTROL_PHRASES = (
     "let me know if",
     "let me know when",
@@ -28,18 +27,12 @@ _TRAILING_CONTROL_PHRASES = (
 
 
 def _strip_trailing_control_text(text: str) -> str:
-    """Strip trailing assistant workflow/control narration from content text.
-
-    Strips lines from the end that start with a control phrase.
-    Conservative: only strips trailing lines, not mid-content occurrences.
-    """
+    """Strip trailing workflow/control narration lines from assistant content."""
     if not text:
         return text
     lines = text.split("\n")
-    # Strip trailing blank lines first
     while lines and not lines[-1].strip():
         lines.pop()
-    # Strip trailing lines that start with a control phrase
     while lines:
         last = lines[-1].strip().lower()
         if last and any(last.startswith(phrase) for phrase in _TRAILING_CONTROL_PHRASES):

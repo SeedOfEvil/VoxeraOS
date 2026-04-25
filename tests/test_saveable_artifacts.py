@@ -127,8 +127,12 @@ class TestMessageRequestsReferencedContent:
             "open google.com",
             "what is the weather",
             "tell me a joke",
-            "write me an essay about linux",  # generate request, not reference save
+            "write me an essay about linux",
             "check disk usage",
+            # "add" verb must not trigger without a reference + file/note target
+            "add a note about linux",
+            "add this content here",
+            "add to the queue",
         ],
     )
     def test_not_recognised(self, message: str) -> None:
@@ -169,6 +173,9 @@ class TestIsRecentAssistantContentSaveRequest:
         [
             "tell me a joke",
             "open google.com",
+            # "add" alone without a file/note target and reference signal must not trigger
+            "add a note about linux",
+            "add to the queue",
         ],
     )
     def test_not_a_save_request(self, message: str) -> None:
@@ -532,18 +539,18 @@ class TestMaybeDraftJobPayloadReferencedSave:
         assert wf["path"] == "~/VoxeraOS/notes/dad-jokes.txt"
 
     def test_no_artifact_returns_none_not_empty_preview(self) -> None:
-        """Empty source: no meaningful assistant content → fail closed, no empty preview."""
         result = maybe_draft_job_payload(
             "save that to a note",
             recent_assistant_artifacts=[],
         )
-        # Either None, or if a payload is returned it must have non-empty content
-        if result is not None:
-            wf = result.get("write_file")
-            if isinstance(wf, dict):
-                assert str(wf.get("content", "")).strip() != "", (
-                    "Empty preview content must not be created from no-artifact state"
-                )
+        assert result is None, "Expected fail-closed None when no saveable artifact exists"
+
+    def test_add_that_no_artifact_returns_none(self) -> None:
+        result = maybe_draft_job_payload(
+            "add that to a note",
+            recent_assistant_artifacts=[],
+        )
+        assert result is None, "Expected fail-closed None when no saveable artifact exists"
 
     def test_preview_has_correct_mode(self) -> None:
         result = maybe_draft_job_payload(
@@ -552,6 +559,30 @@ class TestMaybeDraftJobPayloadReferencedSave:
         )
         assert result is not None
         assert result["write_file"]["mode"] == "overwrite"
+
+    def test_recent_assistant_messages_path_produces_preview(self) -> None:
+        """Verifies the collect_recent_saveable_assistant_artifacts pipeline is wired."""
+        result = maybe_draft_job_payload(
+            "add that to a note called dad-jokes.txt",
+            recent_assistant_artifacts=None,
+            recent_assistant_messages=[_DAD_JOKES_CONTENT],
+        )
+        assert result is not None
+        wf = result["write_file"]
+        assert wf["path"] == "~/VoxeraOS/notes/dad-jokes.txt"
+        assert "bicycle" in wf["content"]
+
+    def test_recent_assistant_messages_boilerplate_not_saved(self) -> None:
+        """Boilerplate in recent_assistant_messages must not become preview content."""
+        boilerplate = (
+            "I've prepared a preview. This is preview-only — nothing has been submitted yet."
+        )
+        result = maybe_draft_job_payload(
+            "add that to a note",
+            recent_assistant_artifacts=None,
+            recent_assistant_messages=[boilerplate],
+        )
+        assert result is None, "Boilerplate-only message must not produce a preview"
 
 
 # ---------------------------------------------------------------------------
