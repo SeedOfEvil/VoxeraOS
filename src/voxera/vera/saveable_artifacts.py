@@ -9,6 +9,47 @@ _LOW_INFORMATION_ASSISTANT_PATTERNS = (
     r"^(?:thanks|thank you|thank-you)[.!]*$",
 )
 
+# Trailing control/workflow phrases that should not appear in saved file content.
+# These are matched against lines at the END of assistant content.
+_TRAILING_CONTROL_PHRASES = (
+    "let me know if",
+    "let me know when",
+    "would you like me to",
+    "would you like to submit",
+    "is there anything else",
+    "should we refine",
+    "do you want me to",
+    "do you want to save",
+    "you can check the preview",
+    "this is preview-only",
+    "nothing has been submitted",
+    "i still have the current request",
+)
+
+
+def _strip_trailing_control_text(text: str) -> str:
+    """Strip trailing assistant workflow/control narration from content text.
+
+    Strips lines from the end that start with a control phrase.
+    Conservative: only strips trailing lines, not mid-content occurrences.
+    """
+    if not text:
+        return text
+    lines = text.split("\n")
+    # Strip trailing blank lines first
+    while lines and not lines[-1].strip():
+        lines.pop()
+    # Strip trailing lines that start with a control phrase
+    while lines:
+        last = lines[-1].strip().lower()
+        if last and any(last.startswith(phrase) for phrase in _TRAILING_CONTROL_PHRASES):
+            lines.pop()
+            while lines and not lines[-1].strip():
+                lines.pop()
+        else:
+            break
+    return "\n".join(lines).strip()
+
 
 def message_requests_referenced_content(message: str) -> bool:
     lowered = message.lower()
@@ -20,6 +61,7 @@ def message_requests_referenced_content(message: str) -> bool:
             r"that\s+(?:joke|summary|text|answer|response|explanation|previous\s+summary|previous\s+answer|previous\s+response|previous\s+explanation)|"
             r"save\s+(?:that|this)(?:\s+as|\s+to|\s+into|\s+in|\b)|"
             r"save\s+it(?:\s+as|\s+to|\s+into|\s+in|\b)|"
+            r"savee\s+(?:that|this|it)(?:\s+as|\s+to|\s+into|\s+in|\b)|"
             r"save\s+(?:the\s+)?previous\s+(?:content|text|answer|response|summary|explanation)(?:\s+as|\s+to|\s+into|\s+in|\b)|"
             r"save\s+previous\s+content(?:\s+as|\s+to|\s+into|\s+in|\b)|"
             r"save\s+last\s+content(?:\s+as|\s+to|\s+into|\s+in|\b)|"
@@ -35,9 +77,13 @@ def message_requests_referenced_content(message: str) -> bool:
             r"save\s+that\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
             r"save\s+that\s+to\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
             r"put\s+that\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
+            r"put\s+this\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
+            r"add\s+(?:that|this|it)\s+to\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
+            r"add\s+(?:that|this|it)\s+in(?:to)?\s+(?:my\s+)?(?:a\s+)?(?:file|note|notes)|"
             r"write\s+your\s+previous\s+(?:answer|response|summary|explanation)\s+to\s+(?:a\s+)?file|"
             r"use\s+your\s+previous\s+response|"
             r"put\s+that\s+into\s+(?:a\s+)?file|"
+            r"put\s+(?:that|this|it)\s+in(?:to)?\s+\S+\.\w{2,10}|"
             r"use\s+that\s+as\s+(?:the\s+)?content"
             r")\b",
             lowered,
@@ -207,6 +253,7 @@ def build_saveable_assistant_artifact(text: str) -> dict[str, str] | None:
 
     extracted = extract_text_draft_from_reply(candidate)
     cleaned = extracted or candidate
+    cleaned = _strip_trailing_control_text(cleaned)
     cleaned = cleaned.strip()
     if not cleaned:
         return None
