@@ -133,6 +133,10 @@ class TestMessageRequestsReferencedContent:
             "add a note about linux",
             "add this content here",
             "add to the queue",
+            # bare-filename pattern must not match URLs/domains
+            "put that into example.com",
+            "put this into google.com/path",
+            "put it in wikipedia.org",
         ],
     )
     def test_not_recognised(self, message: str) -> None:

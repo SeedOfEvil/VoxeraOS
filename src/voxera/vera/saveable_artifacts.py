@@ -76,7 +76,7 @@ def message_requests_referenced_content(message: str) -> bool:
             r"write\s+your\s+previous\s+(?:answer|response|summary|explanation)\s+to\s+(?:a\s+)?file|"
             r"use\s+your\s+previous\s+response|"
             r"put\s+that\s+into\s+(?:a\s+)?file|"
-            r"put\s+(?:that|this|it)\s+in(?:to)?\s+\S+\.\w{2,10}|"
+            r"put\s+(?:that|this|it)\s+in(?:to)?\s+\w[\w.-]*\.(?:txt|md|json|ya?ml|csv|log|rst|toml|ini|cfg|py|sh|js|ts|html?|xml)|"
             r"use\s+that\s+as\s+(?:the\s+)?content"
             r")\b",
             lowered,

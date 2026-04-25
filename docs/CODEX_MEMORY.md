@@ -4106,9 +4106,9 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
 ## 2026-04-25 — PR #365 follow-up — fix(vera): restore referenced save-to-note preview flow
 
 - Summary:
-  - Root cause: `message_requests_referenced_content` had no pattern for "add that/this/it to a note/file" or bare-filename targets ("put that in dad-jokes.txt"); `is_recent_assistant_content_save_request` and `_normalize_structured_file_write_payload` did not recognise "add" or "savee" as save-intent signals. Result: user says "add that to a note" after a meaningful assistant answer → builder returns None → LLM hallucinates "preview ready" → guardrail replaces with generic refusal.
-  - Added patterns for "add that/this/it to/into note/file", "put this in a note/file", "savee that/this/it", and "put that in <filename.ext>" to `message_requests_referenced_content`.
-  - Added "add" and "savee" to save-verb guards in `is_recent_assistant_content_save_request` and `_normalize_structured_file_write_payload`.
+  - Root cause: `message_requests_referenced_content` had no pattern for "add that/this/it to a note/file" or bare-filename targets ("put that in dad-jokes.txt"); `is_recent_assistant_content_save_request` did not include "add" or "savee" as save-intent verbs; `_normalize_structured_file_write_payload` did not include "savee" (note: "add" was already present there). Result: user says "add that to a note" after a meaningful assistant answer → builder returns None → LLM hallucinates "preview ready" → guardrail replaces with generic refusal.
+  - Added patterns for "add that/this/it to/into note/file", "put this in a note/file", "savee that/this/it", and "put that in <filename.ext>" to `message_requests_referenced_content`; bare-filename extension restricted to a bounded safe set to avoid matching URLs/domains.
+  - Added "add" and "savee" to save-verb signal in `is_recent_assistant_content_save_request`; added "savee" to save-verb guard in `_normalize_structured_file_write_payload` ("add" was already present).
   - Added `_strip_trailing_control_text` and called it in `build_saveable_assistant_artifact` so trailing workflow narration ("Let me know if…", "Would you like me to…") is stripped before content is stored as a saveable artifact.
   - Added `tests/test_saveable_artifacts.py` (110 tests).
   - Added regression flow Q to `docs/testing/VERA_REGRESSION_PACK.md`.
