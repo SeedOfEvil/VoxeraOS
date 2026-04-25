@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from ..core.code_draft_intent import has_code_file_extension
 from ..vera.draft_revision import (
     _is_ambiguous_change_request,
+    is_active_preview_content_expand_request,
     looks_like_preview_rename_or_save_as_request,
 )
 from ..vera.preview_drafting import is_recent_assistant_content_save_request
@@ -403,7 +404,15 @@ def assemble_assistant_reply(  # noqa: C901
         # jokes. I left the draft unchanged."). Replace the assistant text
         # entirely with the honest fail-closed message in that case so the
         # false-success claim does not leak to the user.
-        if looks_like_preview_update_claim(assistant_text):
+        #
+        # For active-preview expand turns ("add N more X", "continue the list",
+        # "expand it") we always use the explicit fail-closed message — even
+        # when the conversational control reply has replaced the LLM text —
+        # so the user gets one clear "I could not safely update" sentence
+        # rather than two different "draft unchanged" stock replies.
+        if is_active_preview_content_expand_request(message) or looks_like_preview_update_claim(
+            assistant_text
+        ):
             assistant_text = (
                 "I could not safely update the active preview, so I left it unchanged. "
                 "Try rephrasing with the specific items you want added, or provide "

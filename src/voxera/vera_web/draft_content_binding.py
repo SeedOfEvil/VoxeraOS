@@ -106,6 +106,78 @@ def strip_internal_control_blocks(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Trailing control-prompt stripping
+# ---------------------------------------------------------------------------
+#
+# When the LLM finishes an authored reply with closer prompts like "You can
+# check the preview pane for the full list" or "Would you like to submit
+# this to be saved, or should we refine it further?", those closers must NOT
+# be appended into write_file.content as if they were authored body — they
+# are control narration directed at the operator, not file content.
+#
+# The patterns are anchored to typical Vera-style closer phrases.  Each
+# pattern is applied as a paragraph-or-line-final strip so the body of the
+# reply is preserved untouched.
+
+_TRAILING_CONTROL_PROMPT_PATTERNS = (
+    # Preview pane / draft / file references
+    r"(?:^|\n)\s*you\s+can\s+(?:check|see|view|inspect|review|find)\s+"
+    r"(?:the\s+)?(?:preview\s+pane|draft|file|note|list|content|full\s+list)"
+    r"[^\n]*\.?\s*$",
+    # Submit / refine prompts
+    r"(?:^|\n)\s*would\s+you\s+like\s+(?:me\s+)?to\s+(?:submit|send|refine|continue|add)"
+    r"[^\n]*\??\s*$",
+    r"(?:^|\n)\s*should\s+(?:we|i)\s+(?:submit|refine|continue|add|change|update)"
+    r"[^\n]*\??\s*$",
+    # Acknowledgement / let-me-know closers
+    r"(?:^|\n)\s*let\s+me\s+know\s+(?:if|when|whether)"
+    r"[^\n]*\.?\s*$",
+    r"(?:^|\n)\s*feel\s+free\s+to\s+(?:ask|let\s+me\s+know|tell\s+me)"
+    r"[^\n]*\.?\s*$",
+    # Preview-only / nothing-submitted closers
+    r"(?:^|\n)\s*this\s+is\s+(?:still\s+)?preview-only[^\n]*\.?\s*$",
+    r"(?:^|\n)\s*nothing\s+has\s+been\s+submitted[^\n]*\.?\s*$",
+    # "I've added/updated/expanded the (preview|draft|list|content|note)"
+    # narration that the LLM tacks on top of authored content.  Strip the
+    # leading line so authored body is what gets bound.
+    r"^\s*i(?:['’]ve|\s+have)?\s+(?:added|appended|updated|expanded|extended)\s+"
+    r"(?:\d+\s+(?:more|additional|new|extra|further|another)?\s*"
+    r"(?:[a-z][a-z-]*\s+){0,2})?"
+    r"(?:to\s+)?(?:the\s+|your\s+)?"
+    r"(?:preview|draft|list|content|note|file)[^\n]*\n",
+    # "I've added 10 more dad jokes to the list." (one-liner only)
+    r"^\s*i(?:['’]ve|\s+have)?\s+added\s+\d+\s+(?:more|additional|new|extra)?\s*"
+    r"(?:[a-z][a-z-]*\s+){0,2}"
+    r"(?:jokes?|items?|bullets?|examples?|lines?|entries?|points?|facts?|"
+    r"stories?|poems?|things?|paragraphs?|sentences?)"
+    r"[^\n]*\.?\s*$",
+)
+
+
+def strip_trailing_control_prompts(text: str) -> str:
+    """Strip Vera-style control closers from an extracted authored reply.
+
+    Applied iteratively until no further stripping changes the text, so that
+    several stacked closers ("You can check the preview pane…\n\nWould you
+    like to submit this?") are all removed.
+
+    Pure: takes a string, returns a string.  Whitespace is collapsed at the
+    end and the result is trimmed.
+    """
+    if not text:
+        return ""
+    cleaned = text
+    while True:
+        before = cleaned
+        for pattern in _TRAILING_CONTROL_PROMPT_PATTERNS:
+            cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE | re.MULTILINE)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+        if cleaned == before.strip():
+            break
+    return cleaned
+
+
+# ---------------------------------------------------------------------------
 # Reply draft extraction
 # ---------------------------------------------------------------------------
 
@@ -454,7 +526,10 @@ def resolve_draft_content_binding(  # noqa: C901
         _existing_content = (
             str(_existing_wf.get("content") or "") if isinstance(_existing_wf, dict) else ""
         )
-        _new_addition = (reply_text_draft or "").strip()
+        # Strip trailing control prompts ("You can check the preview pane…",
+        # "Would you like to submit this?", "I've added 10 more dad jokes…")
+        # so the LLM's closer narration never lands as authored content.
+        _new_addition = strip_trailing_control_prompts((reply_text_draft or "").strip()).strip()
         if isinstance(_existing_wf, dict) and _existing_content.strip() and _new_addition:
             # Sanity 1: reject wrapper / status / control narration so it
             # never lands in file content as authored body.
@@ -476,15 +551,25 @@ def resolve_draft_content_binding(  # noqa: C901
                     combined_content = _new_addition
                 else:
                     combined_content = _existing_content.rstrip() + "\n" + _new_addition
-                appended_preview: dict[str, object] = {
-                    **pending_preview,
-                    "write_file": {**_existing_wf, "content": combined_content},
-                }
-                builder_payload = appended_preview
-                preview_needs_write = True
+                # Truth guard: only commit a builder_payload when the
+                # combined content actually differs from existing content.
+                # Without this, the conversational "updated the preview"
+                # reply could fire when the binding produced a no-op
+                # change (e.g. all the LLM additions were stripped as
+                # control narration).
+                if combined_content.strip() != _existing_content.strip():
+                    appended_preview: dict[str, object] = {
+                        **pending_preview,
+                        "write_file": {**_existing_wf, "content": combined_content},
+                    }
+                    builder_payload = appended_preview
+                    preview_needs_write = True
+                else:
+                    generation_content_refresh_failed_closed = True
         elif isinstance(_existing_wf, dict) and not _new_addition:
-            # LLM produced no authored text to append — fail closed so the
-            # assistant reply cannot overclaim an update.
+            # LLM produced no authored text to append (or only stripped
+            # control narration) — fail closed so the assistant reply
+            # cannot overclaim an update.
             generation_content_refresh_failed_closed = True
 
     # ── Generation content binding ──

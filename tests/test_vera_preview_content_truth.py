@@ -1544,3 +1544,231 @@ class TestActivePreviewExpandIntegration:
             assert "queue" in content.lower() or "cache" in content.lower(), (
                 f"phrase {phrase!r} did not route to the expand binding path"
             )
+
+
+# ---------------------------------------------------------------------------
+# N. Trailing control-prompt stripping
+# ---------------------------------------------------------------------------
+
+
+class TestStripTrailingControlPrompts:
+    """The LLM commonly tacks closer prompts on the end of an authored reply
+    ("You can check the preview pane for the full list", "Would you like to
+    submit this?", "I've added 10 more dad jokes…").  These must be stripped
+    BEFORE the reply text is bound into write_file.content — otherwise the
+    closer narration becomes part of the saved file."""
+
+    def test_strips_preview_pane_prompt(self) -> None:
+        from voxera.vera_web.draft_content_binding import strip_trailing_control_prompts
+
+        text = (
+            "11. New joke about queues.\n"
+            "12. Another joke about caches.\n\n"
+            "You can check the preview pane for the full list."
+        )
+        result = strip_trailing_control_prompts(text)
+        assert "preview pane" not in result.lower()
+        assert "11. New joke about queues." in result
+        assert "12. Another joke about caches." in result
+
+    def test_strips_submit_prompt(self) -> None:
+        from voxera.vera_web.draft_content_binding import strip_trailing_control_prompts
+
+        text = (
+            "Body line one.\nBody line two.\n\n"
+            "Would you like to submit this to be saved, or should we refine it further?"
+        )
+        result = strip_trailing_control_prompts(text)
+        assert "submit this" not in result.lower()
+        assert "refine it further" not in result.lower()
+        assert "Body line one." in result
+
+    def test_strips_let_me_know_closer(self) -> None:
+        from voxera.vera_web.draft_content_binding import strip_trailing_control_prompts
+
+        text = "Body content here.\n\nLet me know if you'd like to refine it further."
+        result = strip_trailing_control_prompts(text)
+        assert "let me know" not in result.lower()
+        assert "Body content here." in result
+
+    def test_strips_preview_only_closer(self) -> None:
+        from voxera.vera_web.draft_content_binding import strip_trailing_control_prompts
+
+        text = "Authored body.\nThis is preview-only — nothing has been submitted yet."
+        result = strip_trailing_control_prompts(text)
+        assert "preview-only" not in result.lower()
+        assert "nothing has been submitted" not in result.lower()
+        assert "Authored body." in result
+
+    def test_strips_leading_added_narration(self) -> None:
+        from voxera.vera_web.draft_content_binding import strip_trailing_control_prompts
+
+        text = "I've added 10 more dad jokes to your list.\n\n11. New joke A.\n12. New joke B."
+        result = strip_trailing_control_prompts(text)
+        assert "I've added 10 more" not in result
+        assert "11. New joke A." in result
+
+    def test_strips_stacked_closers(self) -> None:
+        from voxera.vera_web.draft_content_binding import strip_trailing_control_prompts
+
+        text = (
+            "Real body.\n\n"
+            "You can check the preview pane for the full list.\n\n"
+            "Would you like to submit this to be saved?"
+        )
+        result = strip_trailing_control_prompts(text)
+        assert "preview pane" not in result.lower()
+        assert "submit this" not in result.lower()
+        assert "Real body." in result
+
+    def test_pure_closer_strips_to_empty(self) -> None:
+        from voxera.vera_web.draft_content_binding import strip_trailing_control_prompts
+
+        text = (
+            "I've added 10 more dad jokes to the list.\n\n"
+            "You can check the preview pane for the full list.\n\n"
+            "Would you like to submit this?"
+        )
+        result = strip_trailing_control_prompts(text)
+        assert result == "" or len(result.split()) < 4
+
+    def test_normal_body_unchanged(self) -> None:
+        from voxera.vera_web.draft_content_binding import strip_trailing_control_prompts
+
+        text = (
+            "1. Why did the chicken cross the road? To get to the other side.\n"
+            "2. Why don't scientists trust atoms? They make up everything."
+        )
+        result = strip_trailing_control_prompts(text)
+        assert "chicken cross the road" in result
+        assert "scientists trust atoms" in result
+
+
+# ---------------------------------------------------------------------------
+# O. Append-binding truth guard: no-op change must not claim success
+# ---------------------------------------------------------------------------
+
+
+class TestAppendBindingTruthGuard:
+    """Critical invariant: builder_payload must NEVER be set when the
+    combined content equals the existing content (after stripping closers).
+    Without this guard, the conversational 'updated the preview' reply
+    fires with `updated=True` even though no real mutation happened."""
+
+    def _kwargs(self, *, message: str, pending: dict, reply: str | None) -> dict:
+        return {
+            "message": message,
+            "reply_code_content": None,
+            "reply_text_draft": reply,
+            "reply_status": "ok",
+            "builder_payload": None,
+            "pending_preview": pending,
+            "is_code_draft_turn": False,
+            "is_writing_draft_turn": False,
+            "is_explicit_writing_transform": False,
+            "informational_web_turn": False,
+            "is_enrichment_turn": False,
+            "explicit_targeted_content_refinement": False,
+            "active_preview_is_refinable_prose": True,
+            "conversational_answer_first_turn": False,
+            "active_session": "test-session-truth-guard",
+        }
+
+    def test_pure_closer_reply_fails_closed_no_builder_payload(self) -> None:
+        """When the LLM reply is ENTIRELY closer/control text (after strip
+        nothing remains), the binding must fail closed instead of producing
+        a no-op builder_payload that would trigger a false-success reply."""
+        from voxera.vera_web.draft_content_binding import resolve_draft_content_binding
+
+        pending = {
+            "goal": "write a file called jokye.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/jokye.txt",
+                "content": "1. Joke A\n2. Joke B",
+                "mode": "overwrite",
+            },
+        }
+        # LLM reply is wholly closer narration — no actual joke text.
+        reply = (
+            "I've added 10 more dad jokes to your list.\n\n"
+            "You can check the preview pane for the full list.\n\n"
+            "Would you like to submit this to be saved, or should we refine it further?"
+        )
+        result = resolve_draft_content_binding(
+            **self._kwargs(message="add 10 more jokes to the content", pending=pending, reply=reply)
+        )
+        assert result.builder_payload is None, (
+            "no builder_payload — there was no real authored body to append"
+        )
+        assert result.preview_needs_write is False
+        assert result.generation_content_refresh_failed_closed is True
+
+    def test_real_body_with_trailing_closer_strips_and_appends(self) -> None:
+        """When the LLM reply has real joke text PLUS a trailing closer,
+        the closer is stripped and only the real body is appended."""
+        from voxera.vera_web.draft_content_binding import resolve_draft_content_binding
+
+        pending = {
+            "goal": "write a file called jokye.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/jokye.txt",
+                "content": "1. Joke A\n2. Joke B",
+                "mode": "overwrite",
+            },
+        }
+        reply = (
+            "11. Why did the queue cross the cache? To invalidate.\n"
+            "12. What did the daemon say? Nothing.\n\n"
+            "You can check the preview pane for the full list."
+        )
+        result = resolve_draft_content_binding(
+            **self._kwargs(message="add 10 more jokes to the content", pending=pending, reply=reply)
+        )
+        assert result.builder_payload is not None
+        wf = result.builder_payload["write_file"]
+        # Real authored joke text appended.
+        assert "queue cross the cache" in wf["content"]
+        # Closer narration NOT in saved content.
+        assert "preview pane" not in wf["content"].lower()
+        # Existing body preserved.
+        assert "Joke A" in wf["content"]
+
+
+class TestAppendBindingResponseShaping:
+    """When the append-binding fails closed on an active-preview expand
+    turn, the user must see the explicit 'I could not safely update' message
+    — never a vague 'draft unchanged' reply."""
+
+    def test_expand_failure_uses_explicit_fail_closed_message(self) -> None:
+        from voxera.vera_web.response_shaping import assemble_assistant_reply
+
+        pending = {
+            "goal": "write a file called jokye.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/jokye.txt",
+                "content": "1. Joke A\n2. Joke B",
+                "mode": "overwrite",
+            },
+        }
+        result = assemble_assistant_reply(
+            "I've added 10 more dad jokes to your list. "
+            "You can check the preview pane for the full list.",
+            message="add 10 more jokes to the content",
+            pending_preview=pending,
+            builder_payload=None,
+            in_voxera_preview_flow=False,
+            is_code_draft_turn=False,
+            is_writing_draft_turn=False,
+            is_enrichment_turn=False,
+            conversational_answer_first_turn=False,
+            is_json_content_request=False,
+            is_voxera_control_turn=False,
+            explicit_targeted_content_refinement=False,
+            preview_update_rejected=False,
+            generation_content_refresh_failed_closed=True,
+            reply_status="ok:test",
+        )
+        # The clean explicit message must appear.
+        assert "could not safely update" in result.assistant_text.lower()
+        # The false count claim must NOT leak.
+        assert "added 10 more dad jokes" not in result.assistant_text.lower()
