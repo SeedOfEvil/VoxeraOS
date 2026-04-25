@@ -211,10 +211,10 @@ def is_recent_assistant_content_save_request(message: str) -> bool:
     lowered = message.strip().lower()
     if not lowered:
         return False
-    save_signal = bool(re.search(r"\b(save|write|put|create|make)\b", lowered))
+    save_signal = bool(re.search(r"\b(save|savee|write|put|create|make|add)\b", lowered))
     target_signal = bool(
         re.search(r"\b(file|note|notes|markdown|artifact|\.md\b|\.txt\b)\b", lowered)
-    ) or bool(re.search(r"\bsave\s+(?:that|this|it)\b", lowered))
+    ) or bool(re.search(r"\b(?:save|savee)\s+(?:that|this|it)\b", lowered))
     reference_signal = message_requests_referenced_content(
         lowered
     ) or looks_like_plural_reference_request(lowered)
@@ -247,7 +247,7 @@ def _normalize_structured_file_write_payload(
     text = message.strip().rstrip("?.!")
     lowered = text.lower()
     append_mode = bool(re.search(r"\b(append|add\s+to)\b", lowered))
-    if not re.search(r"\b(write|create|save|put|make|append|add|build)\b", lowered):
+    if not re.search(r"\b(write|create|save|savee|put|make|append|add|build)\b", lowered):
         return None
     if not (
         re.search(r"\b(file|note|\w+\.[a-z0-9]{1,8})\b", lowered)

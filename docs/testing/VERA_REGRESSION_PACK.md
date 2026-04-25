@@ -457,6 +457,37 @@ Expected pass:
   - "authorize the file creation"
   - "preview pane"
 
+### Q) Referenced save-to-note flow ("add that to a note")
+
+Prompt sequence:
+
+1. `Hey Vera, tell me 20 dad jokes`
+2. `add that to a note called dad-jokes.txt`
+
+Proves:
+
+- "add that/this/it to a note/file" is recognised as a referenced-save intent
+- governed write_file preview is created from the prior assistant answer (not boilerplate)
+- trailing control narration ("Let me know if…", "Would you like me to…") is stripped
+- nothing is submitted automatically
+
+Expected pass:
+
+- step 2 creates a governed preview with path `~/VoxeraOS/notes/dad-jokes.txt`
+- preview content contains the dad jokes body
+- preview content does NOT include trailing control text ("Let me know if you need more")
+- no queue submit occurs until explicit user submit
+
+Empty-source variant:
+
+1. Fresh session (no prior assistant answer)
+2. `add that to a note`
+
+Expected pass:
+
+- no preview is created
+- response is "I couldn't find a recent response to save in this session…" (not generic refusal)
+
 ## 8) Automated coverage anchors
 
 The pack is represented by focused Vera tests (not one giant mixed-flow test):
