@@ -442,11 +442,11 @@ def _parse_additive_count(lowered: str) -> int:
 
 def _detect_additive_content_type(lowered: str) -> str:
     """Infer the type of content to add from the request text."""
-    if re.search(r"\bjoke|dad\s+joke\b", lowered):
+    if re.search(r"\bjokes?\b|\bdad\s+jokes?\b", lowered):
         return "joke"
-    if re.search(r"\bfact\b", lowered):
+    if re.search(r"\bfacts?\b", lowered):
         return "fact"
-    if re.search(r"\bpoem\b", lowered):
+    if re.search(r"\bpoems?\b", lowered):
         return "poem"
     return "item"
 

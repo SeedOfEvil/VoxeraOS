@@ -1024,6 +1024,7 @@ async def run_vera_chat_turn(
         )
 
     if should_submit_active_preview(message, preview_available=pending_preview is not None):
+        clear_session_pending_content_suggestion(root, active_session)
         assistant_text, status = _submit_handoff(
             root=root,
             session_id=active_session,
@@ -1157,26 +1158,28 @@ async def run_vera_chat_turn(
     if is_apply_pending_suggestion_request(message) and isinstance(pending_preview, dict):
         _pending_sug = read_session_pending_content_suggestion(root, active_session)
         _pend_wf = pending_preview.get("write_file")
-        _pend_path = (
-            str(_pend_wf.get("path") or "").strip() if isinstance(_pend_wf, dict) else ""
-        )
+        _pend_path = str(_pend_wf.get("path") or "").strip() if isinstance(_pend_wf, dict) else ""
         _pend_content = (
             str(_pend_wf.get("content") or "").strip() if isinstance(_pend_wf, dict) else ""
         )
         _sug_content: str | None = None
         _sug_path: str = ""
+        _sug_created_turn: int = 0
         if isinstance(_pending_sug, dict):
             _sug_content = str(_pending_sug.get("content") or "").strip() or None
             _sug_path = str(_pending_sug.get("preview_path") or "").strip()
+            _sug_created_turn = int(_pending_sug.get("created_turn") or 0)
+        # Staleness guard: suggestions expire after 3 turns to prevent stale apply.
+        _sug_turn_age = len(turns) - _sug_created_turn
+        _sug_is_fresh = _sug_created_turn == 0 or _sug_turn_age <= 3
         if (
             _sug_content
+            and _sug_is_fresh
             and isinstance(_pend_wf, dict)
             and not looks_like_non_authored_assistant_message(_sug_content)
             and (_sug_path == _pend_path or not _sug_path)
         ):
-            _merged = (
-                (_pend_content + "\n\n" + _sug_content) if _pend_content else _sug_content
-            )
+            _merged = (_pend_content + "\n\n" + _sug_content) if _pend_content else _sug_content
             _applied_preview: dict[str, object] = {
                 **pending_preview,
                 "write_file": {**_pend_wf, "content": _merged},
@@ -1632,19 +1635,14 @@ async def run_vera_chat_turn(
     # change, store the LLM's authored reply as a pending suggestion so a
     # follow-up "add them please" can apply it.  Only authored, non-wrapper
     # content is stored; wrapper narration is never saved as suggestion content.
-    if (
-        is_active_preview_additive_edit_request(message)
-        and isinstance(pending_preview, dict)
-    ):
+    if is_active_preview_additive_edit_request(message) and isinstance(pending_preview, dict):
         _pre_wf = pending_preview.get("write_file")
         _pre_content = (
             str(_pre_wf.get("content") or "").strip() if isinstance(_pre_wf, dict) else ""
         )
         _post_preview_check = read_session_preview(root, active_session)
         _post_wf = (
-            _post_preview_check.get("write_file")
-            if isinstance(_post_preview_check, dict)
-            else None
+            _post_preview_check.get("write_file") if isinstance(_post_preview_check, dict) else None
         )
         _post_content = (
             str(_post_wf.get("content") or "").strip() if isinstance(_post_wf, dict) else ""
@@ -1744,6 +1742,7 @@ async def run_vera_chat_turn(
             guarded_answer, _answer_before_preview_guardrail, effective_preview
         ):
             clear_active_preview(root, active_session, reason="stale_preview_guardrail_cleanup")
+            clear_session_pending_content_suggestion(root, active_session)
             builder_payload = None
 
     in_voxera_preview_flow = pending_preview is not None or builder_preview is not None

@@ -15,8 +15,6 @@ from __future__ import annotations
 import pytest
 
 from voxera.vera.draft_revision import (
-    _ADDITIVE_INTENT_RE,
-    _APPLY_PENDING_RE,
     _generate_additional_items,
     _parse_additive_count,
     interpret_active_preview_draft_revision,
@@ -415,3 +413,56 @@ def test_refined_content_additive_appends_not_replaces():
     )
     assert result is not None
     assert existing in result, "Original content was replaced instead of appended to"
+
+
+# ---------------------------------------------------------------------------
+# 9. No hijack when no active preview exists
+# ---------------------------------------------------------------------------
+
+
+def test_additive_edit_no_active_preview_returns_none():
+    """interpret_active_preview_draft_revision returns None when active_preview is None."""
+    result = interpret_active_preview_draft_revision("add 5 more jokes", None)
+    assert result is None, "Additive edit must not create a preview from nothing"
+
+
+def test_apply_pending_no_active_preview_returns_none():
+    """is_apply_pending_suggestion_request does not create state by itself — no side effects."""
+    # Just detection — the actual guard is in app.py (isinstance(pending_preview, dict))
+    assert is_apply_pending_suggestion_request("add them please")
+    # With None preview, interpret_active_preview_draft_revision also returns None
+    result = interpret_active_preview_draft_revision("add them please", None)
+    assert result is None
+
+
+# ---------------------------------------------------------------------------
+# 10. Content-type detection handles plural forms
+# ---------------------------------------------------------------------------
+
+
+def test_detect_content_type_jokes_plural():
+    """'add 3 more facts' must detect content type 'fact', not fall back to 'item'."""
+    from voxera.vera.draft_revision import _detect_additive_content_type
+
+    assert _detect_additive_content_type("add 3 more facts") == "fact"
+    assert _detect_additive_content_type("add 3 more fact") == "fact"
+
+
+def test_detect_content_type_poems_plural():
+    """'add more poems' must detect content type 'poem'."""
+    from voxera.vera.draft_revision import _detect_additive_content_type
+
+    assert _detect_additive_content_type("add more poems") == "poem"
+    assert _detect_additive_content_type("add more poem") == "poem"
+
+
+def test_detect_content_type_jokes_plural_generates_jokes():
+    """'add 3 more facts' routes to fact pool, not generic item pool."""
+    from voxera.vera.draft_revision import _FACT_POOL, _generate_additional_items
+
+    result = _generate_additional_items("fact", "", 2)
+    assert result is not None
+    # Fact pool items use sentence form, not bullet "- " prefix
+    assert result[0] != "-", "Fact items should not be bullet-prefixed"
+    # Verify result contains items from the fact pool
+    assert any(fact in result for fact in _FACT_POOL)

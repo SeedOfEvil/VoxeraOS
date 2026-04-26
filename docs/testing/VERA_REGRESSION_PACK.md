@@ -488,7 +488,36 @@ Expected pass:
 - no preview is created
 - response is "I couldn't find a recent response to save in this session…" (not generic refusal)
 
-## 8) Automated coverage anchors
+## 8) Active preview content edit regression (PR: fix-vera-preview-edits)
+
+Protects the invariant: if Vera says it updated the preview, `active_preview.write_file.content`
+must actually change.
+
+Manual smoke:
+
+1. Fresh session
+2. `tell me 5 dad jokes`
+3. `save that to a note called jokarakira.txt` → governed preview created
+4. `can you add 5 more jokes` → preview content must grow (not just chat narration)
+5. `Where is the content?` → response includes added jokes
+6. `submit it` → queue payload has all jokes, not just original 5
+
+Pending-suggestion variant:
+
+1. (same steps 1–3)
+2. `can you add 5 more jokes` → if preview updated directly, done
+3. `add them please` → if step 2 generated suggestions without applying, this applies them
+4. Response must be honest: "Applied…" if applied, "no unapplied suggestions" otherwise
+
+Non-interference checks:
+
+- `submit it` → submits, does not trigger additive path
+- `rename it to newname.txt` → path changes, content preserved
+- `make it shorter` → content shortened, not treated as additive
+
+Automated coverage: `tests/test_vera_preview_content_truth.py` (44 tests)
+
+## 9) Automated coverage anchors
 
 The pack is represented by focused Vera tests (not one giant mixed-flow test):
 
@@ -496,5 +525,6 @@ The pack is represented by focused Vera tests (not one giant mixed-flow test):
 - `tests/test_vera_contextual_flows.py`
 - `tests/test_vera_session_characterization.py`
 - `tests/test_vera_runtime_validation_fixes.py`
+- `tests/test_vera_preview_content_truth.py`
 
 Prefer extending those focused files for future Vera regression additions.

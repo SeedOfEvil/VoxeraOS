@@ -432,7 +432,31 @@ A runtime validation pass requires **all** of the following:
 
 If any layer disagrees, mark validation as failed and file an evidence-backed regression.
 
-## 16) Quick triage command bundle
+## 16) Active preview content edit smoke (PR: fix-vera-preview-edits)
+
+Validates that additive edits mutate `active_preview.write_file.content` directly.
+
+```
+tell me 5 dad jokes
+save that to a note called jokarakira.txt
+can you add 5 more jokes
+Where is the content?
+submit it
+```
+
+After submit:
+```bash
+cat ~/VoxeraOS/notes/jokarakira.txt
+# must contain original 5 + additional jokes
+voxera queue status
+find notes/queue/artifacts -maxdepth 2 -type f | sort | tail -n 20
+```
+
+Expected: preview content grew before submit; submitted file contains all jokes. Vera's
+"updated" claim is truthful (preview payload changed). `make it shorter` still produces
+a shortened preview. `rename it to newname.txt` still changes path only.
+
+## 17) Quick triage command bundle
 
 ```bash
 voxera queue status
