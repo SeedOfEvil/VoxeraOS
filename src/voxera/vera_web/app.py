@@ -1170,8 +1170,10 @@ async def run_vera_chat_turn(
             _sug_path = str(_pending_sug.get("preview_path") or "").strip()
             _sug_created_turn = int(_pending_sug.get("created_turn") or 0)
         # Staleness guard: suggestions expire after 3 turns to prevent stale apply.
+        # A missing created_turn (0) is treated as stale, not as always-fresh, to
+        # prevent a corrupt or hand-crafted session from bypassing the TTL.
         _sug_turn_age = len(turns) - _sug_created_turn
-        _sug_is_fresh = _sug_created_turn == 0 or _sug_turn_age <= 3
+        _sug_is_fresh = _sug_created_turn > 0 and _sug_turn_age <= 3
         if (
             _sug_content
             and _sug_is_fresh
@@ -1636,6 +1638,13 @@ async def run_vera_chat_turn(
     # follow-up "add them please" can apply it.  Only authored, non-wrapper
     # content is stored; wrapper narration is never saved as suggestion content.
     if is_active_preview_additive_edit_request(message) and isinstance(pending_preview, dict):
+        # _pre_content: content from pending_preview as it stood when this turn began
+        # (pending_preview is the pre-LLM-binding local snapshot; it is reassigned
+        # during the turn only by automation/code-draft lanes which don't apply to
+        # write_file content edits).  _post_content: re-read from session after the
+        # full pipeline ran, so any reset_active_preview call is visible.
+        # If additive edit succeeded upstream → _post_content != _pre_content → no
+        # pending suggestion stored.  If nothing updated → store for deferred apply.
         _pre_wf = pending_preview.get("write_file")
         _pre_content = (
             str(_pre_wf.get("content") or "").strip() if isinstance(_pre_wf, dict) else ""

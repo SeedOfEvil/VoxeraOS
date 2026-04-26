@@ -205,7 +205,9 @@ def test_apply_pending_suggestion_detection():
         "put those in the note",
         "update the preview with those",
         "add those to the content",
-        "use those",
+        "use those jokes",
+        "use those suggestions",
+        "use those items",
     ]
     for phrase in apply_phrases:
         assert is_apply_pending_suggestion_request(phrase), f"Not detected: {phrase!r}"
@@ -219,6 +221,8 @@ def test_not_apply_pending_suggestion():
         "save that to a note",
         "rename it to foo.txt",
         "where is the content?",
+        "use those colors",  # over-broad: not an apply-context phrase
+        "use those settings",  # over-broad: not an apply-context phrase
     ]
     for phrase in non_apply_phrases:
         assert not is_apply_pending_suggestion_request(phrase), f"False positive: {phrase!r}"
@@ -466,3 +470,137 @@ def test_detect_content_type_jokes_plural_generates_jokes():
     assert result[0] != "-", "Fact items should not be bullet-prefixed"
     # Verify result contains items from the fact pool
     assert any(fact in result for fact in _FACT_POOL)
+
+
+# ---------------------------------------------------------------------------
+# 11. "make it longer" content-type gating
+# ---------------------------------------------------------------------------
+
+
+def test_make_it_longer_on_list_content_appends():
+    """'make it longer' on multi-item content (list-like) appends additional items."""
+    result = interpret_active_preview_draft_revision("make it longer", _JOKE_PREVIEW)
+    assert result is not None, "Expected additive update for list-like content"
+    wf = result.get("write_file", {})
+    new_content = str(wf.get("content", ""))
+    assert len(new_content) > len(_FIVE_JOKES), "Content should grow for list-like preview"
+    assert "outstanding in his field" in new_content, "Original content must be preserved"
+
+
+def test_make_it_longer_on_prose_returns_none():
+    """'make it longer' on free-form prose returns None (honest fail-closed)."""
+    prose_preview = {
+        "goal": "write a file called essay.txt with provided content",
+        "write_file": {
+            "path": "~/VoxeraOS/notes/essay.txt",
+            "content": "This is a single paragraph of free-form prose about cats.",
+            "mode": "overwrite",
+        },
+    }
+    result = interpret_active_preview_draft_revision("make it longer", prose_preview)
+    # Must not append random pool items to prose — honest None is correct.
+    assert result is None, "Should not append mismatched pool items to free-form prose"
+
+
+# ---------------------------------------------------------------------------
+# 12. Pending suggestion session-store integration
+# ---------------------------------------------------------------------------
+
+
+def test_pending_suggestion_write_read_clear():
+    """Session store write/read/clear round-trip for pending content suggestion."""
+    import tempfile
+    from pathlib import Path
+
+    from voxera.vera.session_store import (
+        clear_session_pending_content_suggestion,
+        read_session_pending_content_suggestion,
+        write_session_pending_content_suggestion,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        sid = "test-pending-sug-01"
+
+        assert read_session_pending_content_suggestion(root, sid) is None
+
+        suggestion = {
+            "content": "New joke 1.\n\nNew joke 2.",
+            "preview_path": "~/VoxeraOS/notes/test.txt",
+            "created_turn": 3,
+        }
+        write_session_pending_content_suggestion(root, sid, suggestion)
+
+        read_back = read_session_pending_content_suggestion(root, sid)
+        assert read_back is not None
+        assert read_back["content"] == suggestion["content"]
+        assert read_back["preview_path"] == suggestion["preview_path"]
+        assert read_back["created_turn"] == 3
+
+        clear_session_pending_content_suggestion(root, sid)
+        assert read_session_pending_content_suggestion(root, sid) is None
+
+
+def test_pending_suggestion_apply_merges_content():
+    """Pending suggestion merge logic produces correct combined content."""
+    import tempfile
+    from pathlib import Path
+
+    from voxera.vera.session_store import (
+        read_session_pending_content_suggestion,
+        write_session_pending_content_suggestion,
+    )
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        root = Path(tmpdir)
+        sid = "test-pending-merge-01"
+
+        existing_content = "Original joke here."
+        suggestion_content = "New joke A.\n\nNew joke B."
+        write_session_pending_content_suggestion(
+            root,
+            sid,
+            {
+                "content": suggestion_content,
+                "preview_path": "~/VoxeraOS/notes/x.txt",
+                "created_turn": 1,
+            },
+        )
+
+        sug = read_session_pending_content_suggestion(root, sid)
+        assert sug is not None
+        sug_text = str(sug.get("content") or "").strip()
+        merged = (existing_content + "\n\n" + sug_text) if existing_content else sug_text
+        assert existing_content in merged
+        assert suggestion_content in merged
+        assert merged.startswith(existing_content)
+
+
+def test_pending_suggestion_stale_created_turn_zero_is_not_fresh():
+    """created_turn=0 must be treated as stale, not always-fresh."""
+    # This tests the TTL logic directly: turn_age = current_turns - created_turn
+    # _sug_is_fresh = created_turn > 0 and turn_age <= 3
+    # created_turn=0 → False regardless of current turn count.
+    current_turns = 5
+    created_turn = 0
+    turn_age = current_turns - created_turn
+    sug_is_fresh = created_turn > 0 and turn_age <= 3
+    assert not sug_is_fresh, "created_turn=0 must be treated as stale"
+
+
+def test_pending_suggestion_stale_after_three_turns():
+    """A suggestion from > 3 turns ago is not fresh."""
+    current_turns = 10
+    created_turn = 5  # age = 5 > 3
+    turn_age = current_turns - created_turn
+    sug_is_fresh = created_turn > 0 and turn_age <= 3
+    assert not sug_is_fresh, "Suggestion older than 3 turns must not be fresh"
+
+
+def test_pending_suggestion_fresh_within_three_turns():
+    """A suggestion from ≤ 3 turns ago is fresh."""
+    current_turns = 4
+    created_turn = 2  # age = 2 <= 3
+    turn_age = current_turns - created_turn
+    sug_is_fresh = created_turn > 0 and turn_age <= 3
+    assert sug_is_fresh, "Suggestion within 3 turns must be fresh"

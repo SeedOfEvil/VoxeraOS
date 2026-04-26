@@ -219,13 +219,17 @@ def refined_content_from_active_preview(
 
     # Additive edit: "add N more jokes", "append 3 more bullets", "continue the list", etc.
     # Must run before semantic substitution so additive requests append rather than replace.
+    # "make it longer" is only valid for list-like content; for prose it falls through so
+    # the caller can return None honestly rather than appending mismatched pool items.
     if _ADDITIVE_INTENT_RE.search(lowered):
-        n = _parse_additive_count(lowered)
-        content_type = _detect_additive_content_type(lowered)
-        additional = _generate_additional_items(content_type, existing_content, n)
-        if additional:
-            base = existing_content.rstrip()
-            return (base + "\n\n" + additional) if base else additional
+        _is_make_longer = bool(re.search(r"\bmake\s+it\s+longer\b", lowered))
+        if not _is_make_longer or _content_looks_like_list(existing_content):
+            n = _parse_additive_count(lowered)
+            content_type = _detect_additive_content_type(lowered)
+            additional = _generate_additional_items(content_type, existing_content, n)
+            if additional:
+                base = existing_content.rstrip()
+                return (base + "\n\n" + additional) if base else additional
 
     semantic = extract_semantic_content_request(lowered)
     if semantic:
@@ -392,7 +396,7 @@ _APPLY_PENDING_RE = re.compile(
     r"|\bput\s+those\s+in(?:to)?\s+(?:the\s+)?(?:note|preview|content|draft)?\b"
     r"|\bupdate\s+(?:the\s+)?preview\s+with\s+(?:those|them|that)\b"
     r"|\badd\s+those\s+to\s+(?:the\s+)?(?:content|note|preview|draft)?\b"
-    r"|\buse\s+those\b",
+    r"|\buse\s+those\s+(?:suggestions?|jokes?|facts?|items?|examples?|bullets?|content)\b",
     re.IGNORECASE,
 )
 
@@ -451,8 +455,27 @@ def _detect_additive_content_type(lowered: str) -> str:
     return "item"
 
 
+def _content_looks_like_list(content: str) -> bool:
+    """Return True when content is list-like (bullets, numbered items, or multi-paragraph entries).
+
+    Used to gate "make it longer" — appending pool items to free-form prose is wrong.
+    """
+    lines = content.strip().splitlines()
+    if any(line.strip().startswith(("- ", "* ")) for line in lines):
+        return True
+    if any(re.match(r"^\d+[.)]\s", line.strip()) for line in lines):
+        return True
+    paragraphs = [p.strip() for p in content.split("\n\n") if p.strip()]
+    return len(paragraphs) >= 2
+
+
 def _generate_additional_items(content_type: str, existing: str, n: int) -> str | None:
-    """Generate n additional authored items not already present in existing content."""
+    """Generate n additional authored items not already present in existing content.
+
+    Generic "item" type falls back to fact-pool entries formatted as bullets.
+    For unrecognized content types, the caller should detect content type from
+    context rather than relying on this fallback.
+    """
     existing_lower = existing.strip().lower()
     if content_type == "joke":
         available = [j for j in _JOKE_POOL if j.strip().lower() not in existing_lower]
@@ -836,6 +859,9 @@ def interpret_active_preview_draft_revision(
     # "continue the list", "make it longer", etc.
     # Must run before content_refinement_intent so plural forms ("jokes" not matched
     # by \bjoke\b) and verbs like "append"/"continue" are routed here directly.
+    # "make it longer" is only applied to list-like content; for free-form prose it
+    # falls through so content_refinement_intent can attempt a semantic transform
+    # rather than appending mismatched pool items.
     if _ADDITIVE_INTENT_RE.search(lowered):
         write_file = active_preview.get("write_file")
         _add_mode = "overwrite"
@@ -846,19 +872,21 @@ def interpret_active_preview_draft_revision(
             _add_existing = str(write_file.get("content") or "")
         else:
             _add_path = f"~/VoxeraOS/notes/{filename}"
-        _add_n = _parse_additive_count(lowered)
-        _add_type = _detect_additive_content_type(lowered)
-        _add_items = _generate_additional_items(_add_type, _add_existing, _add_n)
-        if _add_items:
-            _add_merged = (
-                (_add_existing.rstrip() + "\n\n" + _add_items)
-                if _add_existing.strip()
-                else _add_items
-            )
-            return {
-                "goal": f"write a file called {filename} with provided content",
-                "write_file": {"path": _add_path, "content": _add_merged, "mode": _add_mode},
-            }
+        _is_make_longer = bool(re.search(r"\bmake\s+it\s+longer\b", lowered))
+        if not _is_make_longer or _content_looks_like_list(_add_existing):
+            _add_n = _parse_additive_count(lowered)
+            _add_type = _detect_additive_content_type(lowered)
+            _add_items = _generate_additional_items(_add_type, _add_existing, _add_n)
+            if _add_items:
+                _add_merged = (
+                    (_add_existing.rstrip() + "\n\n" + _add_items)
+                    if _add_existing.strip()
+                    else _add_items
+                )
+                return {
+                    "goal": f"write a file called {filename} with provided content",
+                    "write_file": {"path": _add_path, "content": _add_merged, "mode": _add_mode},
+                }
 
     content_refinement_intent = re.search(
         r"\b(add|put|use|make|change|update|replace|save|restore|turn|convert|transform|keep)\b",
