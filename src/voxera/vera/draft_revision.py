@@ -217,6 +217,16 @@ def refined_content_from_active_preview(
     if explicit:
         return explicit
 
+    # Additive edit: "add N more jokes", "append 3 more bullets", "continue the list", etc.
+    # Must run before semantic substitution so additive requests append rather than replace.
+    if _ADDITIVE_INTENT_RE.search(lowered):
+        n = _parse_additive_count(lowered)
+        content_type = _detect_additive_content_type(lowered)
+        additional = _generate_additional_items(content_type, existing_content, n)
+        if additional:
+            base = existing_content.rstrip()
+            return (base + "\n\n" + additional) if base else additional
+
     semantic = extract_semantic_content_request(lowered)
     if semantic:
         return semantic
@@ -311,6 +321,8 @@ _POEM_POOL = [
     "Stars above the quiet sea,\nFlickering lights of mystery.",
     "Morning dew on petals bright,\nA gentle start to morning light.",
     "Leaves of gold and crimson red,\nDancing where the path has led.",
+    "A river winds through valleys deep,\nWhere ancient echoes softly sleep.",
+    "The moon climbs slow above the hill,\nAnd all the restless world grows still.",
 ]
 
 _JOKE_POOL = [
@@ -318,6 +330,22 @@ _JOKE_POOL = [
     "I told my wife she was drawing her eyebrows too high. She looked surprised.",
     "Why don't scientists trust atoms? Because they make up everything.",
     "What do you call a fish without eyes? A fsh.",
+    "I used to hate facial hair, but then it grew on me.",
+    "Why can't a nose be 12 inches long? Because then it would be a foot.",
+    "I'm reading a book on anti-gravity. It's impossible to put down.",
+    "Did you hear about the mathematician who's afraid of negative numbers? He'll stop at nothing to avoid them.",
+    "Why do cows wear bells? Because their horns don't work.",
+    "What do you call cheese that isn't yours? Nacho cheese.",
+    "I would tell a joke about pizza, but it's a little cheesy.",
+    "Time flies like an arrow. Fruit flies like a banana.",
+    "My wife told me I had to stop acting like a flamingo. I had to put my foot down.",
+    "I asked the librarian if they had books about paranoia. She whispered, 'They're right behind you!'",
+    "Why did the belt go to jail? It held up a pair of pants.",
+    "What do you call a sleeping dinosaur? A dino-snore.",
+    "I only know 25 letters of the alphabet. I don't know why.",
+    "Why can't you give Elsa a balloon? Because she'll let it go.",
+    "What do you call a fake noodle? An impasta.",
+    "I'm on a seafood diet. I see food and I eat it.",
 ]
 
 _FACT_POOL = [
@@ -325,12 +353,131 @@ _FACT_POOL = [
     "Octopuses have three hearts and blue blood.",
     "A group of flamingos is called a 'flamboyance.'",
     "Bananas are berries, but strawberries are not.",
+    "A day on Venus is longer than a year on Venus.",
+    "Cleopatra lived closer in time to the Moon landing than to the construction of the Great Pyramid.",
+    "The shortest war in history lasted 38 to 45 minutes.",
+    "A group of crows is called a murder.",
+    "Wombats produce cube-shaped droppings.",
+    "The Eiffel Tower grows about 6 inches taller in summer due to thermal expansion.",
+    "There are more possible iterations of a game of chess than there are atoms in the observable universe.",
+    "A shrimp's heart is in its head.",
 ]
 
 _SUMMARY_POOL = [
     "A concise overview of the key points.",
     "The essential highlights in brief.",
 ]
+
+# ---------------------------------------------------------------------------
+# Additive edit support
+# ---------------------------------------------------------------------------
+
+_ADDITIVE_INTENT_RE = re.compile(
+    r"\b(?:add|append|tack\s+on|include)\s+"
+    r"(?:(?:\d+|five|ten|three|four|six|seven|eight|nine|a\s+few|a\s+couple(?:\s+of)?|some)\s+)?"
+    r"more\s+"
+    r"(?:joke|jokes|dad\s+jokes?|bullet|bullets|item|items|example|examples|point|points|"
+    r"fact|facts|line|lines|reason|reasons|step|steps|tip|tips|idea|ideas|thing|things|"
+    r"sentence|sentences|entry|entries)\b"
+    r"|\bcontinue\s+(?:the\s+)?list\b"
+    r"|\bexpand\s+(?:(?:the|this|it)\s+)?(?:note|list|content|draft)\s+with\b"
+    r"|\bmake\s+it\s+longer\b",
+    re.IGNORECASE,
+)
+
+_APPLY_PENDING_RE = re.compile(
+    r"\badd\s+them\b"
+    r"|\byes[\s,]+(?:add|apply|include)(?:\s+(?:those|them|that))?\b"
+    r"|\bapply\s+(?:those|them|that|it)\b"
+    r"|\bput\s+those\s+in(?:to)?\s+(?:the\s+)?(?:note|preview|content|draft)?\b"
+    r"|\bupdate\s+(?:the\s+)?preview\s+with\s+(?:those|them|that)\b"
+    r"|\badd\s+those\s+to\s+(?:the\s+)?(?:content|note|preview|draft)?\b"
+    r"|\buse\s+those\b",
+    re.IGNORECASE,
+)
+
+_WORD_TO_NUM = {
+    "a couple of": 2,
+    "a couple": 2,
+    "a few": 3,
+    "some": 3,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+
+
+def is_active_preview_additive_edit_request(message: str) -> bool:
+    """Return True when the message requests adding/appending content to an active preview."""
+    return bool(_ADDITIVE_INTENT_RE.search(message.strip().lower()))
+
+
+def is_apply_pending_suggestion_request(message: str) -> bool:
+    """Return True when the message requests applying a pending content suggestion."""
+    return bool(_APPLY_PENDING_RE.search(message.strip().lower()))
+
+
+def _parse_additive_count(lowered: str) -> int:
+    """Extract the requested item count from an additive edit request (default 3)."""
+    m = re.search(r"\b(?:add|append)\s+(\d+)\s+more\b", lowered)
+    if m:
+        try:
+            n = int(m.group(1))
+            if 1 <= n <= 20:
+                return n
+        except ValueError:
+            pass
+    for word, num in sorted(_WORD_TO_NUM.items(), key=lambda kv: -len(kv[0])):
+        if re.search(rf"\b(?:add|append)\s+{re.escape(word)}\s+more\b", lowered):
+            return num
+    return 3
+
+
+def _detect_additive_content_type(lowered: str) -> str:
+    """Infer the type of content to add from the request text."""
+    if re.search(r"\bjoke|dad\s+joke\b", lowered):
+        return "joke"
+    if re.search(r"\bfact\b", lowered):
+        return "fact"
+    if re.search(r"\bpoem\b", lowered):
+        return "poem"
+    return "item"
+
+
+def _generate_additional_items(content_type: str, existing: str, n: int) -> str | None:
+    """Generate n additional authored items not already present in existing content."""
+    existing_lower = existing.strip().lower()
+    if content_type == "joke":
+        available = [j for j in _JOKE_POOL if j.strip().lower() not in existing_lower]
+        if not available:
+            available = list(_JOKE_POOL)
+        selected = available[:n]
+        return "\n\n".join(selected) if selected else None
+    if content_type == "fact":
+        available = [f for f in _FACT_POOL if f.strip().lower() not in existing_lower]
+        if not available:
+            available = list(_FACT_POOL)
+        selected = available[:n]
+        return "\n\n".join(selected) if selected else None
+    if content_type == "poem":
+        available = [p for p in _POEM_POOL if p.strip().lower() not in existing_lower]
+        if not available:
+            available = list(_POEM_POOL)
+        selected = available[:n]
+        return "\n\n".join(selected) if selected else None
+    # Generic list items: use facts as bullet points
+    available = [f for f in _FACT_POOL if f.strip().lower() not in existing_lower]
+    if not available:
+        available = list(_FACT_POOL)
+    selected = available[:n]
+    return "\n".join(f"- {item}" for item in selected) if selected else None
 
 
 def _is_clear_content_refresh_request(lowered: str) -> bool:
@@ -400,7 +547,7 @@ def _is_ambiguous_change_request(lowered: str) -> bool:
 
     ambiguous_patterns = (
         r"^change\s+it[.!?]*$",
-        r"^make\s+it\s+(better|good|nice|different|shorter|longer)[.!?]*$",
+        r"^make\s+it\s+(better|good|nice|different)[.!?]*$",
         r"^fix\s+it[.!?]*$",
         r"^improve\s+it[.!?]*$",
         r"^update\s+it[.!?]*$",
@@ -684,6 +831,34 @@ def interpret_active_preview_draft_revision(
                     "goal": f"append to a file called {filename} with provided content",
                     "write_file": {"path": path, "content": content, "mode": "append"},
                 }
+
+    # ── Dedicated additive edit: "add N more jokes", "append N more bullets",
+    # "continue the list", "make it longer", etc.
+    # Must run before content_refinement_intent so plural forms ("jokes" not matched
+    # by \bjoke\b) and verbs like "append"/"continue" are routed here directly.
+    if _ADDITIVE_INTENT_RE.search(lowered):
+        write_file = active_preview.get("write_file")
+        _add_mode = "overwrite"
+        _add_existing = ""
+        if isinstance(write_file, dict):
+            _add_path = str(write_file.get("path") or f"~/VoxeraOS/notes/{filename}")
+            _add_mode = str(write_file.get("mode") or "overwrite")
+            _add_existing = str(write_file.get("content") or "")
+        else:
+            _add_path = f"~/VoxeraOS/notes/{filename}"
+        _add_n = _parse_additive_count(lowered)
+        _add_type = _detect_additive_content_type(lowered)
+        _add_items = _generate_additional_items(_add_type, _add_existing, _add_n)
+        if _add_items:
+            _add_merged = (
+                (_add_existing.rstrip() + "\n\n" + _add_items)
+                if _add_existing.strip()
+                else _add_items
+            )
+            return {
+                "goal": f"write a file called {filename} with provided content",
+                "write_file": {"path": _add_path, "content": _add_merged, "mode": _add_mode},
+            }
 
     content_refinement_intent = re.search(
         r"\b(add|put|use|make|change|update|replace|save|restore|turn|convert|transform|keep)\b",
