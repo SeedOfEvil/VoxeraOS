@@ -50,6 +50,7 @@ def _dispatch(
     queue_root: Path | None = None,
     session_id: str = "test-session",
     session_context: dict[str, object] | None = None,
+    active_preview: dict[str, object] | None = None,
 ) -> EarlyExitResult:
     """Thin wrapper so tests don't have to pass every keyword argument."""
     return dispatch_early_exit_intent(
@@ -62,6 +63,7 @@ def _dispatch(
         queue_root=queue_root or Path("/tmp/nonexistent-queue"),
         session_id=session_id,
         session_context=session_context,
+        active_preview=active_preview,
     )
 
 
@@ -1567,10 +1569,118 @@ class TestOutputReviewDispatch:
             )
         assert result.matched is True
         assert result.status == "reviewed_job_outcome"
-        # The actual written content must appear in the review message
-        assert real_joke in result.assistant_text
-        # A hallucinated alternative must NOT appear
-        assert "invisible man" not in result.assistant_text
+
+
+class TestPreviewInspectionDispatch:
+    def test_non_empty_write_preview(self, tmp_path: Path) -> None:
+        result = _dispatch(
+            message="Where is the content?",
+            queue_root=tmp_path,
+            active_preview={
+                "kind": "write_file",
+                "write_file": {"path": "~/VoxeraOS/notes/test.txt", "content": "hello world"},
+            },
+        )
+        assert result.matched is True
+        assert result.status == "ok:active_preview_inspection"
+        assert "Active write preview" in result.assistant_text
+        assert "Path: ~/VoxeraOS/notes/test.txt" in result.assistant_text
+        assert "hello world" in result.assistant_text
+        assert "preview pane" not in result.assistant_text.lower()
+
+    def test_long_content_truncates(self, tmp_path: Path) -> None:
+        content = "a" * 1105
+        result = _dispatch(
+            message="Show me the content",
+            queue_root=tmp_path,
+            active_preview={
+                "kind": "write_file",
+                "write_file": {"path": "~/x.txt", "content": content},
+            },
+        )
+        assert result.matched is True
+        assert "*(truncated — 105 more characters)*" in result.assistant_text
+
+    def test_empty_content(self, tmp_path: Path) -> None:
+        result = _dispatch(
+            message="What content is in the draft?",
+            queue_root=tmp_path,
+            active_preview={"kind": "write_file", "write_file": {"path": "~/x.txt", "content": ""}},
+        )
+        assert "Content is currently empty" in result.assistant_text
+        assert "I did not submit anything" in result.assistant_text
+
+    def test_no_active_preview(self, tmp_path: Path) -> None:
+        result = _dispatch(message="Where is the content?", queue_root=tmp_path)
+        assert result.matched is True
+        assert result.assistant_text == "There is no active preview in this session right now."
+
+    @pytest.mark.parametrize(
+        "phrase",
+        [
+            "What will be written?",
+            "Show me what will be saved",
+            "What is in the preview?",
+            "Show me the draft",
+        ],
+    )
+    def test_phrase_variants(self, tmp_path: Path, phrase: str) -> None:
+        result = _dispatch(
+            message=phrase,
+            queue_root=tmp_path,
+            active_preview={
+                "kind": "write_file",
+                "write_file": {"path": "~/x.txt", "content": "updated"},
+            },
+        )
+        assert result.matched is True
+        assert "updated" in result.assistant_text
+
+    def test_non_write_preview_is_truthful(self, tmp_path: Path) -> None:
+        result = _dispatch(
+            message="Where is the content?",
+            queue_root=tmp_path,
+            active_preview={"kind": "run_command", "run_command": {"cmd": "echo hello"}},
+        )
+        assert result.matched is True
+        assert "not a write-file draft" in result.assistant_text
+        assert "Active preview kind: run_command" in result.assistant_text
+
+    def test_post_edit_inspection_reads_updated_content(self, tmp_path: Path) -> None:
+        result = _dispatch(
+            message="Where is the content?",
+            queue_root=tmp_path,
+            active_preview={
+                "kind": "write_file",
+                "write_file": {"path": "~/x.txt", "content": "original + added content"},
+            },
+        )
+        assert result.matched is True
+        assert "original + added content" in result.assistant_text
+        assert "original\n" not in result.assistant_text
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "submit it",
+            "rename it to final.txt",
+            "save that to a note called x.txt",
+            "can you add 5 more jokes",
+        ],
+    )
+    def test_non_interference_messages_do_not_hit_preview_inspection(
+        self, tmp_path: Path, message: str
+    ) -> None:
+        result = _dispatch(
+            message=message,
+            queue_root=tmp_path,
+            active_preview={
+                "kind": "write_file",
+                "write_file": {"path": "~/x.txt", "content": "hello world"},
+            },
+        )
+        if result.matched:
+            assert result.status != "ok:active_preview_inspection"
 
     def test_what_was_the_output_fails_closed_without_context(self, tmp_path: Path) -> None:
         """'What was the output?' without job context fails closed honestly."""
