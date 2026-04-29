@@ -22,6 +22,7 @@ _MAX_LINKED_JOB_TRACK = 64
 _MAX_LINKED_COMPLETIONS = 64
 _MAX_LINKED_NOTIFICATIONS = 128
 _MAX_SAVEABLE_ASSISTANT_ARTIFACTS = 8
+_PENDING_CONTENT_SUGGESTION_FIELD = "pending_content_suggestion"
 
 
 def _default_linked_job_registry() -> dict[str, list[Any]]:
@@ -137,6 +138,7 @@ def append_session_turn(
         "walkthrough_state",
         _SHARED_CONTEXT_FIELD,
         _ROUTING_DEBUG_FIELD,
+        _PENDING_CONTENT_SUGGESTION_FIELD,
     ):
         preserved = previous.get(preserved_key)
         if (
@@ -520,6 +522,46 @@ def write_session_conversational_planning_active(
     else:
         payload.pop("conversational_planning_active", None)
     _write_session_payload(queue_root, session_id, payload)
+
+
+# ---------------------------------------------------------------------------
+# Pending content suggestion — bounded single-turn authored suggestion
+# ---------------------------------------------------------------------------
+#
+# Stores a short-lived authored content suggestion produced when Vera generates
+# additional content in a chat reply but cannot safely apply it to the active
+# preview in the same turn.  A follow-up "add them please" / "apply those" turn
+# can consume this suggestion and merge it into the active preview.
+#
+# The suggestion is session-local, contains authored content only (no wrapper
+# text), and is cleared after application or after the preview changes for any
+# other reason.
+
+
+def read_session_pending_content_suggestion(
+    queue_root: Path, session_id: str
+) -> dict[str, Any] | None:
+    """Return the pending authored content suggestion for this session, or None."""
+    payload = _read_session_payload(queue_root, session_id)
+    suggestion = payload.get(_PENDING_CONTENT_SUGGESTION_FIELD)
+    return suggestion if isinstance(suggestion, dict) else None
+
+
+def write_session_pending_content_suggestion(
+    queue_root: Path, session_id: str, suggestion: dict[str, Any] | None
+) -> None:
+    """Persist a pending authored content suggestion into the session."""
+    _write_session_field(
+        queue_root,
+        session_id,
+        field_name=_PENDING_CONTENT_SUGGESTION_FIELD,
+        value=suggestion,
+    )
+
+
+def clear_session_pending_content_suggestion(queue_root: Path, session_id: str) -> None:
+    """Clear any pending authored content suggestion from this session."""
+    write_session_pending_content_suggestion(queue_root, session_id, None)
 
 
 # ---------------------------------------------------------------------------

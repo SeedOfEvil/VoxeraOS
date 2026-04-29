@@ -4121,3 +4121,19 @@ Contract fields to rely on across built-in skills: `summary`, `machine_payload`,
   - `make golden-check`
   - `make security-check`
   - `make validation-check`
+
+## 2026-04-26 — PR claude/fix-vera-preview-edits-JIFbu — fix(vera): apply active preview content edits truthfully
+
+- Root cause: When user said "add 5 more jokes" with an active write_file preview, `content_refinement_intent` regex used `\bjoke\b` (word-boundary) which did not match "jokes" (plural), so the additive block in `refined_content_from_active_preview` was never reached. Additionally `_is_ambiguous_change_request` incorrectly classified "make it shorter" / "make it longer" as ambiguous, blocking legitimate transforms.
+- Summary:
+  - `draft_revision.py`: Added `_ADDITIVE_INTENT_RE`, `_APPLY_PENDING_RE`, `_WORD_TO_NUM`; added `is_active_preview_additive_edit_request`, `is_apply_pending_suggestion_request`, `_parse_additive_count`, `_detect_additive_content_type`, `_generate_additional_items`; expanded `_JOKE_POOL` (4→20), `_FACT_POOL` (4→12), `_POEM_POOL` (4→6); wired additive block into `refined_content_from_active_preview` and as a dedicated early path in `interpret_active_preview_draft_revision` (bypasses `content_refinement_intent` gate so plural forms like "jokes" route correctly); removed "shorter"/"longer" from `_is_ambiguous_change_request`; fixed `_detect_additive_content_type` to use `\bfacts?\b`/`\bpoems?\b` (plural-safe).
+  - `session_store.py`: Added `pending_content_suggestion` field with read/write/clear helpers.
+  - `app.py`: Wired pending-suggestion apply lane (fast path, no LLM, fails closed with clear message) and post-LLM pending suggestion storage (only when additive request but preview content did not change); added staleness TTL guard (3 turns); clears pending suggestion on submit and on stale-preview guardrail cleanup.
+  - Added `tests/test_vera_preview_content_truth.py` (44 tests).
+  - Added regression flow to `docs/testing/VERA_REGRESSION_PACK.md` (section 8) and smoke step to `docs/testing/RUNTIME_VALIDATION_PLAYBOOK.md` (section 16).
+- Scope boundaries: no queue/daemon changes, no STT/TTS, no policy changes, no auto-submit.
+- Validation:
+  - `ruff format --check .`
+  - `ruff check .`
+  - `mypy src/voxera`
+  - `pytest -q` (4545 passed, 3 skipped, excluding pre-existing voice-async failures)

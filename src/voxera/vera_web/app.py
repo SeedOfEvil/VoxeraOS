@@ -44,6 +44,8 @@ from ..vera.context_lifecycle import (
     context_on_session_cleared,
 )
 from ..vera.draft_revision import (
+    is_active_preview_additive_edit_request,
+    is_apply_pending_suggestion_request,
     looks_like_preview_rename_or_save_as_request,
 )
 from ..vera.evidence_review import (
@@ -89,6 +91,7 @@ from ..vera.preview_submission import (
 )
 from ..vera.prompt import VERA_SYSTEM_PROMPT, vera_queue_boundary_summary
 from ..vera.saveable_artifacts import (
+    looks_like_non_authored_assistant_message,
     message_requests_referenced_content,
 )
 from ..vera.service import (
@@ -99,6 +102,7 @@ from ..vera.service import (
 from ..vera.session_store import (
     append_routing_debug_entry,
     append_session_turn,
+    clear_session_pending_content_suggestion,
     clear_session_routing_debug,
     clear_session_turns,
     new_session_id,
@@ -110,6 +114,7 @@ from ..vera.session_store import (
     read_session_investigation,
     read_session_last_automation_preview,
     read_session_last_user_input_origin,
+    read_session_pending_content_suggestion,
     read_session_preview,
     read_session_saveable_assistant_artifacts,
     read_session_turns,
@@ -122,6 +127,7 @@ from ..vera.session_store import (
     write_session_enrichment,
     write_session_investigation,
     write_session_last_automation_preview,
+    write_session_pending_content_suggestion,
     write_session_weather_context,
 )
 from ..vera.weather_flow import (
@@ -1018,6 +1024,7 @@ async def run_vera_chat_turn(
         )
 
     if should_submit_active_preview(message, preview_available=pending_preview is not None):
+        clear_session_pending_content_suggestion(root, active_session)
         assistant_text, status = _submit_handoff(
             root=root,
             session_id=active_session,
@@ -1139,6 +1146,93 @@ async def run_vera_chat_turn(
             turns=_lc_turns,
             status=_lifecycle_result.status,
             assistant_text=_lifecycle_result.assistant_text,
+            preview=read_session_preview(root, active_session),
+        )
+
+    # ── Active preview: pending content suggestion apply lane ─────────────
+    # When the user says "add them please" / "apply those" and a recent
+    # pending content suggestion exists (authored content generated in a
+    # prior turn that was not applied), apply it to the active preview now
+    # without an LLM call.  Fails closed with a clear message when no valid
+    # suggestion is available so stale suggestions never apply silently.
+    if is_apply_pending_suggestion_request(message) and isinstance(pending_preview, dict):
+        _pending_sug = read_session_pending_content_suggestion(root, active_session)
+        _pend_wf = pending_preview.get("write_file")
+        _pend_path = str(_pend_wf.get("path") or "").strip() if isinstance(_pend_wf, dict) else ""
+        _pend_content = (
+            str(_pend_wf.get("content") or "").strip() if isinstance(_pend_wf, dict) else ""
+        )
+        _sug_content: str | None = None
+        _sug_path: str = ""
+        _sug_created_turn: int = 0
+        if isinstance(_pending_sug, dict):
+            _sug_content = str(_pending_sug.get("content") or "").strip() or None
+            _sug_path = str(_pending_sug.get("preview_path") or "").strip()
+            _sug_created_turn = int(_pending_sug.get("created_turn") or 0)
+        # Staleness guard: suggestions expire after 3 turns to prevent stale apply.
+        # A missing created_turn (0) is treated as stale, not as always-fresh, to
+        # prevent a corrupt or hand-crafted session from bypassing the TTL.
+        _sug_turn_age = len(turns) - _sug_created_turn
+        _sug_is_fresh = _sug_created_turn > 0 and _sug_turn_age <= 3
+        if (
+            _sug_content
+            and _sug_is_fresh
+            and isinstance(_pend_wf, dict)
+            and not looks_like_non_authored_assistant_message(_sug_content)
+            and (_sug_path == _pend_path or not _sug_path)
+        ):
+            _merged = (_pend_content + "\n\n" + _sug_content) if _pend_content else _sug_content
+            _applied_preview: dict[str, object] = {
+                **pending_preview,
+                "write_file": {**_pend_wf, "content": _merged},
+            }
+            try:
+                _applied_norm = normalize_preview_payload(_applied_preview)
+            except Exception:
+                _applied_norm = None
+            if _applied_norm is not None and _applied_norm != pending_preview:
+                reset_active_preview(root, active_session, _applied_norm)
+                clear_session_pending_content_suggestion(root, active_session)
+                _pend_filename = Path(_pend_path).name if _pend_path else "the note"
+                _apply_text = (
+                    f"Applied the pending content to `{_pend_filename}`. "
+                    "The preview content has been updated."
+                )
+                append_session_turn(root, active_session, role="assistant", text=_apply_text)
+                _apply_turns = read_session_turns(root, active_session)
+                append_routing_debug_entry(
+                    root,
+                    active_session,
+                    route_status="active_preview_pending_suggestion_applied",
+                    dispatch_source="pending_suggestion_apply_lane",
+                    turn_index=len(_apply_turns),
+                )
+                return ChatTurnResult(
+                    session_id=active_session,
+                    turns=_apply_turns,
+                    status="active_preview_pending_suggestion_applied",
+                    assistant_text=_apply_text,
+                    preview=read_session_preview(root, active_session),
+                )
+        # No valid pending suggestion — fail closed.
+        _no_sug_text = (
+            "There are no unapplied content suggestions pending for this preview. "
+            "Ask me to add specific content first, then confirm to apply it."
+        )
+        append_session_turn(root, active_session, role="assistant", text=_no_sug_text)
+        _no_sug_turns = read_session_turns(root, active_session)
+        append_routing_debug_entry(
+            root,
+            active_session,
+            route_status="no_pending_suggestion",
+            dispatch_source="pending_suggestion_apply_lane",
+            turn_index=len(_no_sug_turns),
+        )
+        return ChatTurnResult(
+            session_id=active_session,
+            turns=_no_sug_turns,
+            status="no_pending_suggestion",
+            assistant_text=_no_sug_text,
             preview=read_session_preview(root, active_session),
         )
 
@@ -1537,6 +1631,63 @@ async def run_vera_chat_turn(
     if _binding.preview_needs_write and isinstance(builder_payload, dict):
         reset_active_preview(root, active_session, builder_payload)
 
+    # ── Post-LLM: pending suggestion storage for additive edits ───────────
+    # When the user requested an additive content edit (e.g. "add 5 more
+    # jokes") and the full binding pipeline did NOT produce a preview content
+    # change, store the LLM's authored reply as a pending suggestion so a
+    # follow-up "add them please" can apply it.  Only authored, non-wrapper
+    # content is stored; wrapper narration is never saved as suggestion content.
+    if is_active_preview_additive_edit_request(message) and isinstance(pending_preview, dict):
+        # _pre_content: content from pending_preview as it stood when this turn began
+        # (pending_preview is the pre-LLM-binding local snapshot; it is reassigned
+        # during the turn only by automation/code-draft lanes which don't apply to
+        # write_file content edits).  _post_content: re-read from session after the
+        # full pipeline ran, so any reset_active_preview call is visible.
+        # If additive edit succeeded upstream → _post_content != _pre_content → no
+        # pending suggestion stored.  If nothing updated → store for deferred apply.
+        _pre_wf = pending_preview.get("write_file")
+        _pre_content = (
+            str(_pre_wf.get("content") or "").strip() if isinstance(_pre_wf, dict) else ""
+        )
+        _post_preview_check = read_session_preview(root, active_session)
+        _post_wf = (
+            _post_preview_check.get("write_file") if isinstance(_post_preview_check, dict) else None
+        )
+        _post_content = (
+            str(_post_wf.get("content") or "").strip() if isinstance(_post_wf, dict) else ""
+        )
+        if _pre_content == _post_content:
+            # No update was applied — store LLM reply content as pending suggestion.
+            _sug_candidate = _drafts.reply_text_draft or ""
+            if not _sug_candidate:
+                # Try the first non-wrapper block of the sanitized answer.
+                for _block in re.split(r"\n{2,}", sanitized_answer):
+                    _stripped = _block.strip()
+                    if (
+                        _stripped
+                        and len(_stripped.split()) >= 4
+                        and not looks_like_non_authored_assistant_message(_stripped)
+                    ):
+                        _sug_candidate = _stripped
+                        break
+            _sug_candidate = _sug_candidate.strip()
+            if _sug_candidate and not looks_like_non_authored_assistant_message(_sug_candidate):
+                _pre_path = (
+                    str(_pre_wf.get("path") or "").strip() if isinstance(_pre_wf, dict) else ""
+                )
+                write_session_pending_content_suggestion(
+                    root,
+                    active_session,
+                    {
+                        "content": _sug_candidate,
+                        "preview_path": _pre_path,
+                        "created_turn": len(turns),
+                    },
+                )
+        else:
+            # Preview content changed — clear any stale pending suggestion.
+            clear_session_pending_content_suggestion(root, active_session)
+
     # Gate preview-existence claims on actual preview state.
     # An empty-content write_file preview is a placeholder, not authoritative
     # code — treat it as "no real preview" for claim-checking purposes.
@@ -1600,6 +1751,7 @@ async def run_vera_chat_turn(
             guarded_answer, _answer_before_preview_guardrail, effective_preview
         ):
             clear_active_preview(root, active_session, reason="stale_preview_guardrail_cleanup")
+            clear_session_pending_content_suggestion(root, active_session)
             builder_payload = None
 
     in_voxera_preview_flow = pending_preview is not None or builder_preview is not None
