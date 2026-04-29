@@ -87,6 +87,20 @@ class TestExtractReplyDrafts:
         # this test anchors that the function runs without error.
         assert isinstance(drafts.reply_text_draft, (str, type(None)))
 
+    def test_trailing_submit_wrapper_is_removed_from_reply_text_draft(self) -> None:
+        reply = (
+            "Here are five dad jokes:\n1. Joke one.\n2. Joke two.\n\nWould you like to submit it?"
+        )
+        drafts = extract_reply_drafts(reply, "tell me five jokes and save them as jokes.txt")
+        assert drafts.reply_text_draft is not None
+        assert "Would you like to submit it?" not in drafts.reply_text_draft
+        assert "1. Joke one." in drafts.reply_text_draft
+
+    def test_all_wrapper_fallback_collapses_to_none(self) -> None:
+        reply = "I've prepared a preview.\nReady to submit?"
+        drafts = extract_reply_drafts(reply, "write a poem about clouds")
+        assert drafts.reply_text_draft is None
+
 
 # ---------------------------------------------------------------------------
 # resolve_draft_content_binding — baseline behavior

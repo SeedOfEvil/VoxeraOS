@@ -278,6 +278,43 @@ class TestStripTrailingControlText:
         assert "Would you like me to" not in result
         assert "Here is some content." in result
 
+    def test_strips_hope_and_let_me_know_tail(self) -> None:
+        content = (
+            "Here are five dad jokes:\n\n"
+            "1. One.\n2. Two.\n\n"
+            "Hope those hit the spot! Let me know if you need anything else."
+        )
+        result = _strip_trailing_control_text(content)
+        assert "Hope those hit the spot" not in result
+        assert "1. One." in result
+
+    def test_strips_preview_pane_and_submit_tail(self) -> None:
+        content = (
+            "Here is the list:\n1. First\n2. Second\n\n"
+            "You can check the preview pane for the full list.\n"
+            "Would you like to submit it?"
+        )
+        result = _strip_trailing_control_text(content)
+        assert "preview pane" not in result.lower()
+        assert "would you like to submit" not in result.lower()
+        assert "1. First" in result
+
+    def test_preserves_generic_would_you_like_to_line(self) -> None:
+        content = "Closing thought:\nWould you like to read this as a rhetorical question?"
+        result = _strip_trailing_control_text(content)
+        assert result == content
+
+    def test_preserves_generic_want_me_to_line(self) -> None:
+        content = "Workshop closer:\nWant me to send you the slides?"
+        result = _strip_trailing_control_text(content)
+        assert result == content
+
+    def test_strips_want_me_to_preview_control_line(self) -> None:
+        content = "Draft is complete.\nWant me to submit it now?"
+        result = _strip_trailing_control_text(content)
+        assert "want me to submit" not in result.lower()
+        assert "Draft is complete." in result
+
 
 # ---------------------------------------------------------------------------
 # 4. build_saveable_assistant_artifact — artifact content is stripped
@@ -317,6 +354,22 @@ class TestBuildSaveableAssistantArtifact:
 
     def test_trivial_ok_rejected(self) -> None:
         assert build_saveable_assistant_artifact("Ok!") is None
+
+    def test_line_poetry_with_let_me_know_is_preserved(self) -> None:
+        content = (
+            "A short poem:\n\n"
+            "Let me know, river, where the moonlight goes.\n"
+            "The stars reply in silver rows."
+        )
+        artifact = build_saveable_assistant_artifact(content)
+        assert artifact is not None
+        assert "Let me know, river, where the moonlight goes." in artifact["content"]
+
+    def test_literal_quoted_let_me_know_phrase_is_preserved(self) -> None:
+        content = "She said, 'Let me know if you survive.'"
+        artifact = build_saveable_assistant_artifact(content)
+        assert artifact is not None
+        assert artifact["content"] == content
 
 
 # ---------------------------------------------------------------------------

@@ -38,6 +38,7 @@ from ..vera.draft_revision import (  # noqa: E402
 )
 from ..vera.preview_submission import normalize_preview_payload
 from ..vera.saveable_artifacts import (
+    clean_authored_content_for_preview_save,
     looks_like_non_authored_assistant_message,
     message_requests_referenced_content,
 )
@@ -173,6 +174,9 @@ def extract_reply_drafts(
         candidate = sanitized_answer.strip()
         if candidate and len(candidate.split()) >= 4:
             reply_text_draft = candidate
+    if reply_text_draft is not None:
+        cleaned_draft = clean_authored_content_for_preview_save(reply_text_draft)
+        reply_text_draft = cleaned_draft.strip() or None
 
     return ReplyDrafts(
         reply_code_content=reply_code_content,

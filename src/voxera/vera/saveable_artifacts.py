@@ -23,6 +23,26 @@ _TRAILING_CONTROL_PHRASES = (
     "this is preview-only",
     "nothing has been submitted",
     "i still have the current request",
+    "hope those helped",
+    "hope those hit the spot",
+    "anything else on your mind",
+    "should i keep going",
+    "if you want, i can",
+    "take a look at the preview pane",
+    "the draft is still in the preview",
+    "submit current preview",
+    "i've prepared a preview",
+    "i've updated the preview",
+    "ready to submit",
+    "just let me know when",
+)
+
+_TRAILING_CONTROL_REGEXES = (
+    re.compile(r"^would you like to\s+(?:submit|save|rename|preview)\b"),
+    re.compile(r"^i can also\s+(?:save|submit|rename|update|refine|rewrite|draft)\b"),
+    re.compile(
+        r"^want me to\s+(?:submit|save|rename|preview|refine|rewrite|draft|continue|keep)\b"
+    ),
 )
 
 
@@ -34,14 +54,29 @@ def _strip_trailing_control_text(text: str) -> str:
     while lines and not lines[-1].strip():
         lines.pop()
     while lines:
-        last = lines[-1].strip().lower()
-        if last and any(last.startswith(phrase) for phrase in _TRAILING_CONTROL_PHRASES):
+        last = lines[-1].strip().lower().replace("\u2019", "'")
+        is_phrase_match = last and any(
+            last.startswith(phrase) for phrase in _TRAILING_CONTROL_PHRASES
+        )
+        is_regex_match = bool(
+            last and any(pattern.search(last) for pattern in _TRAILING_CONTROL_REGEXES)
+        )
+        if is_phrase_match or is_regex_match:
             lines.pop()
             while lines and not lines[-1].strip():
                 lines.pop()
         else:
             break
     return "\n".join(lines).strip()
+
+
+def clean_authored_content_for_preview_save(text: str) -> str:
+    """Normalize assistant-authored content before binding into write_file previews.
+
+    Conservative behavior: only strips trailing control/wrapper narration that
+    appears at the end of assistant-authored content.
+    """
+    return _strip_trailing_control_text(str(text or ""))
 
 
 def message_requests_referenced_content(message: str) -> bool:
@@ -246,7 +281,7 @@ def build_saveable_assistant_artifact(text: str) -> dict[str, str] | None:
 
     extracted = extract_text_draft_from_reply(candidate)
     cleaned = extracted or candidate
-    cleaned = _strip_trailing_control_text(cleaned)
+    cleaned = clean_authored_content_for_preview_save(cleaned)
     cleaned = cleaned.strip()
     if not cleaned:
         return None
