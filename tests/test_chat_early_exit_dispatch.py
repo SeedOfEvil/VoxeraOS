@@ -1577,7 +1577,7 @@ class TestPreviewInspectionDispatch:
             message="Where is the content?",
             queue_root=tmp_path,
             active_preview={
-                "kind": "write_file",
+                "goal": "write a file called final-vera-content-smoke.txt with provided content",
                 "write_file": {"path": "~/VoxeraOS/notes/test.txt", "content": "hello world"},
             },
         )
@@ -1594,7 +1594,6 @@ class TestPreviewInspectionDispatch:
             message="Show me the content",
             queue_root=tmp_path,
             active_preview={
-                "kind": "write_file",
                 "write_file": {"path": "~/x.txt", "content": content},
             },
         )
@@ -1605,7 +1604,7 @@ class TestPreviewInspectionDispatch:
         result = _dispatch(
             message="What content is in the draft?",
             queue_root=tmp_path,
-            active_preview={"kind": "write_file", "write_file": {"path": "~/x.txt", "content": ""}},
+            active_preview={"write_file": {"path": "~/x.txt", "content": ""}},
         )
         assert "Content is currently empty" in result.assistant_text
         assert "I did not submit anything" in result.assistant_text
@@ -1629,8 +1628,8 @@ class TestPreviewInspectionDispatch:
             message=phrase,
             queue_root=tmp_path,
             active_preview={
-                "kind": "write_file",
-                "write_file": {"path": "~/x.txt", "content": "updated"},
+                "goal": "write a file called x.txt with provided content",
+                "write_file": {"path": "~/x.txt", "content": "updated", "mode": "overwrite"},
             },
         )
         assert result.matched is True
@@ -1651,13 +1650,17 @@ class TestPreviewInspectionDispatch:
             message="Where is the content?",
             queue_root=tmp_path,
             active_preview={
-                "kind": "write_file",
-                "write_file": {"path": "~/x.txt", "content": "original + added content"},
+                "goal": "write a file called final-vera-content-smoke.txt with provided content",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/final-vera-content-smoke.txt",
+                    "content": "Here are 10 dad jokes for you:\n\n1. Joke one.\n2. Joke two.",
+                    "mode": "overwrite",
+                },
             },
         )
         assert result.matched is True
-        assert "original + added content" in result.assistant_text
-        assert "original\n" not in result.assistant_text
+        assert "Here are 10 dad jokes for you" in result.assistant_text
+        assert "final-vera-content-smoke.txt" in result.assistant_text
 
     @pytest.mark.parametrize(
         "message",

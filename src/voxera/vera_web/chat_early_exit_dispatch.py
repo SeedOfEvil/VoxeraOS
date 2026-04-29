@@ -104,19 +104,31 @@ def _is_preview_content_inspection_request(message: str) -> bool:
     return any(p.match(message) for p in _PREVIEW_INSPECTION_PATTERNS)
 
 
+def _extract_write_file_from_preview(
+    active_preview: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(active_preview, dict):
+        return None
+    direct = active_preview.get("write_file")
+    if isinstance(direct, dict):
+        return direct
+    kind = str(active_preview.get("kind") or "").strip().lower()
+    if kind == "write_file" and isinstance(active_preview.get("write_file"), dict):
+        return active_preview["write_file"]
+    return None
+
+
 def _build_preview_inspection_response(active_preview: dict[str, Any] | None) -> str:
     if not isinstance(active_preview, dict):
         return "There is no active preview in this session right now."
-    kind = str(active_preview.get("kind") or "").strip().lower()
-    if kind != "write_file":
+    wf = _extract_write_file_from_preview(active_preview)
+    if wf is None:
+        kind = str(active_preview.get("kind") or "").strip().lower()
         if kind:
             return (
                 "There is an active preview in this session, but it is not a write-file draft.\n\n"
                 f"Active preview kind: {kind}"
             )
-        return "There is an active preview in this session, but it is not a write-file draft."
-    wf = active_preview.get("write_file")
-    if not isinstance(wf, dict):
         return "There is an active preview in this session, but it is not a write-file draft."
     path = str(wf.get("path") or "(unknown path)")
     content = str(wf.get("content") or "")
