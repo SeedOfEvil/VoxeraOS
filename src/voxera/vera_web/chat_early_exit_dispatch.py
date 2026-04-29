@@ -86,6 +86,9 @@ from ..vera.time_context import answer_time_question
 
 _PREVIEW_INSPECTION_LIMIT = 1000
 _PREVIEW_INSPECTION_PATTERNS = (
+    re.compile(r"^\s*where(?:'s|\s+is)\s+(?:the\s+)?content\??\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what(?:'s|\s+is)\s+in\s+the\s+draft\??\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what(?:'s|\s+is)\s+in\s+the\s+preview\??\s*$", re.IGNORECASE),
     re.compile(r"^\s*where is the content\??\s*$", re.IGNORECASE),
     re.compile(r"^\s*show me the content\s*$", re.IGNORECASE),
     re.compile(r"^\s*show current preview content\s*$", re.IGNORECASE),
@@ -109,13 +112,8 @@ def _extract_write_file_from_preview(
 ) -> dict[str, Any] | None:
     if not isinstance(active_preview, dict):
         return None
-    direct = active_preview.get("write_file")
-    if isinstance(direct, dict):
-        return direct
-    kind = str(active_preview.get("kind") or "").strip().lower()
-    if kind == "write_file" and isinstance(active_preview.get("write_file"), dict):
-        return active_preview["write_file"]
-    return None
+    wf = active_preview.get("write_file")
+    return wf if isinstance(wf, dict) else None
 
 
 def _build_preview_inspection_response(active_preview: dict[str, Any] | None) -> str:

@@ -1569,6 +1569,57 @@ class TestOutputReviewDispatch:
             )
         assert result.matched is True
         assert result.status == "reviewed_job_outcome"
+        # The actual written content must appear in the review message.
+        assert real_joke in result.assistant_text
+        # A hallucinated alternative must NOT appear.
+        assert "invisible man" not in result.assistant_text
+
+    def test_what_was_the_output_fails_closed_without_context(self, tmp_path: Path) -> None:
+        """'What was the output?' without job context fails closed honestly."""
+        result = _dispatch(
+            message="What was the output?",
+            queue_root=tmp_path,
+            session_context={},
+        )
+        assert result.matched is True
+        assert result.status == "review_missing_job"
+
+    def test_show_me_the_output_matches_review(self, tmp_path: Path) -> None:
+        """'Show me the output' should also dispatch to review."""
+        from voxera.vera.evidence_review import ReviewedJobEvidence
+
+        mock_evidence = ReviewedJobEvidence(
+            job_id="job-20260404-test02",
+            state="succeeded",
+            lifecycle_state="done",
+            terminal_outcome="succeeded",
+            approval_status="",
+            latest_summary="Done.",
+            failure_summary="",
+            artifact_families=(),
+            artifact_refs=(),
+            evidence_trace=(),
+            child_summary=None,
+            execution_capabilities=None,
+            capability_boundary_violation=None,
+            expected_artifacts=(),
+            observed_expected_artifacts=(),
+            missing_expected_artifacts=(),
+            expected_artifact_status="",
+            normalized_outcome_class="success",
+            value_forward_text="Wrote file: /notes/output.txt.",
+        )
+        with patch(
+            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
+            return_value=mock_evidence,
+        ):
+            result = _dispatch(
+                message="show me the output",
+                queue_root=tmp_path,
+                session_context={"last_completed_job_ref": "job-20260404-test02"},
+            )
+        assert result.matched is True
+        assert result.status == "reviewed_job_outcome"
 
 
 class TestPreviewInspectionDispatch:
@@ -1682,52 +1733,15 @@ class TestPreviewInspectionDispatch:
                 "write_file": {"path": "~/x.txt", "content": "hello world"},
             },
         )
-        if result.matched:
-            assert result.status != "ok:active_preview_inspection"
+        assert result.matched is False
 
-    def test_what_was_the_output_fails_closed_without_context(self, tmp_path: Path) -> None:
-        """'What was the output?' without job context fails closed honestly."""
-        result = _dispatch(
-            message="What was the output?",
-            queue_root=tmp_path,
-            session_context={},
-        )
-        assert result.matched is True
-        assert result.status == "review_missing_job"
-
-    def test_show_me_the_output_matches_review(self, tmp_path: Path) -> None:
-        """'Show me the output' should also dispatch to review."""
-        from voxera.vera.evidence_review import ReviewedJobEvidence
-
-        mock_evidence = ReviewedJobEvidence(
-            job_id="job-20260404-test02",
-            state="succeeded",
-            lifecycle_state="done",
-            terminal_outcome="succeeded",
-            approval_status="",
-            latest_summary="Done.",
-            failure_summary="",
-            artifact_families=(),
-            artifact_refs=(),
-            evidence_trace=(),
-            child_summary=None,
-            execution_capabilities=None,
-            capability_boundary_violation=None,
-            expected_artifacts=(),
-            observed_expected_artifacts=(),
-            missing_expected_artifacts=(),
-            expected_artifact_status="",
-            normalized_outcome_class="success",
-            value_forward_text="Wrote file: /notes/output.txt.",
-        )
-        with patch(
-            "voxera.vera_web.chat_early_exit_dispatch.review_job_outcome",
-            return_value=mock_evidence,
-        ):
+    def test_contraction_variants_match(self, tmp_path: Path) -> None:
+        for phrase in ("Where's the content?", "What's in the draft?", "What's in the preview?"):
             result = _dispatch(
-                message="show me the output",
+                message=phrase,
                 queue_root=tmp_path,
-                session_context={"last_completed_job_ref": "job-20260404-test02"},
+                active_preview={"write_file": {"path": "~/x.txt", "content": "hello"}},
             )
-        assert result.matched is True
-        assert result.status == "reviewed_job_outcome"
+            assert result.matched is True
+            assert result.status == "ok:active_preview_inspection"
+            assert "hello" in result.assistant_text
