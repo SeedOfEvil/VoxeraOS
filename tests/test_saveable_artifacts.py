@@ -304,6 +304,17 @@ class TestStripTrailingControlText:
         result = _strip_trailing_control_text(content)
         assert result == content
 
+    def test_preserves_generic_want_me_to_line(self) -> None:
+        content = "Workshop closer:\nWant me to send you the slides?"
+        result = _strip_trailing_control_text(content)
+        assert result == content
+
+    def test_strips_want_me_to_preview_control_line(self) -> None:
+        content = "Draft is complete.\nWant me to submit it now?"
+        result = _strip_trailing_control_text(content)
+        assert "want me to submit" not in result.lower()
+        assert "Draft is complete." in result
+
 
 # ---------------------------------------------------------------------------
 # 4. build_saveable_assistant_artifact — artifact content is stripped

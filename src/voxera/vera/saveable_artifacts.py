@@ -26,23 +26,23 @@ _TRAILING_CONTROL_PHRASES = (
     "hope those helped",
     "hope those hit the spot",
     "anything else on your mind",
-    "want me to",
     "should i keep going",
     "if you want, i can",
     "take a look at the preview pane",
     "the draft is still in the preview",
     "submit current preview",
     "i've prepared a preview",
-    "i’ve prepared a preview",
     "i've updated the preview",
-    "i’ve updated the preview",
     "ready to submit",
     "just let me know when",
 )
 
 _TRAILING_CONTROL_REGEXES = (
-    r"^would you like to\s+(?:submit|save|rename|send|preview)\b",
-    r"^i can also\s+(?:save|submit|rename|update|refine|rewrite|draft)\b",
+    re.compile(r"^would you like to\s+(?:submit|save|rename|preview)\b"),
+    re.compile(r"^i can also\s+(?:save|submit|rename|update|refine|rewrite|draft)\b"),
+    re.compile(
+        r"^want me to\s+(?:submit|save|rename|preview|refine|rewrite|draft|continue|keep)\b"
+    ),
 )
 
 
@@ -54,12 +54,12 @@ def _strip_trailing_control_text(text: str) -> str:
     while lines and not lines[-1].strip():
         lines.pop()
     while lines:
-        last = lines[-1].strip().lower()
+        last = lines[-1].strip().lower().replace("\u2019", "'")
         is_phrase_match = last and any(
             last.startswith(phrase) for phrase in _TRAILING_CONTROL_PHRASES
         )
         is_regex_match = bool(
-            last and any(re.search(pattern, last) for pattern in _TRAILING_CONTROL_REGEXES)
+            last and any(pattern.search(last) for pattern in _TRAILING_CONTROL_REGEXES)
         )
         if is_phrase_match or is_regex_match:
             lines.pop()
