@@ -84,6 +84,72 @@ from ..vera.reference_resolver import (
 from ..vera.session_store import read_session_handoff_state
 from ..vera.time_context import answer_time_question
 
+_PREVIEW_INSPECTION_LIMIT = 1000
+_PREVIEW_INSPECTION_PATTERNS = (
+    re.compile(r"^\s*where(?:'s|\s+is)\s+(?:the\s+)?content[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what(?:'s|\s+is)\s+in\s+the\s+draft[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what(?:'s|\s+is)\s+in\s+the\s+preview[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*show me the content[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*show current preview content[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what content is in the draft[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what content is in the preview[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what will be written[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what are you going to write[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*show me what will be saved[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*show me the draft[?.!]?\s*$", re.IGNORECASE),
+)
+
+
+def _is_preview_content_inspection_request(message: str) -> bool:
+    return any(p.match(message) for p in _PREVIEW_INSPECTION_PATTERNS)
+
+
+def _extract_write_file_from_preview(
+    active_preview: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(active_preview, dict):
+        return None
+    direct = active_preview.get("write_file")
+    if isinstance(direct, dict):
+        return direct
+
+    payload = active_preview.get("payload")
+    if isinstance(payload, dict):
+        nested = payload.get("write_file")
+        if isinstance(nested, dict):
+            return nested
+
+    return None
+
+
+def _build_preview_inspection_response(active_preview: dict[str, Any] | None) -> str:
+    if not isinstance(active_preview, dict):
+        return "There is no active preview in this session right now."
+    wf = _extract_write_file_from_preview(active_preview)
+    if wf is None:
+        kind = str(active_preview.get("kind") or "").strip().lower()
+        if kind:
+            return (
+                "There is an active preview in this session, but it is not a write-file draft.\n\n"
+                f"Active preview kind: {kind}"
+            )
+        return "There is an active preview in this session, but it is not a write-file draft."
+    path = str(wf.get("path") or "(unknown path)")
+    content = str(wf.get("content") or "")
+    if not content:
+        return (
+            "Active write preview\n\n"
+            f"Path: {path}\n\n"
+            "Content is currently empty. I did not submit anything. "
+            "Please provide content or revise the draft before submitting."
+        )
+    preview = content[:_PREVIEW_INSPECTION_LIMIT]
+    truncated = len(content) - len(preview)
+    out = f"Active write preview\n\nPath: {path}\n\nContent:\n\n{preview}"
+    if truncated > 0:
+        out += f"\n\n*(truncated — {truncated} more characters)*"
+    return out
+
 
 @dataclass
 class EarlyExitResult:
@@ -168,24 +234,27 @@ def dispatch_early_exit_intent(
     session_id: str,
     session_context: dict[str, Any] | None = None,
     active_preview_revision_in_flight: bool = False,
+    active_preview: dict[str, Any] | None = None,
 ) -> EarlyExitResult:
     """Evaluate message against all early-exit intent conditions in chat() order.
 
     Checks evaluated (in order):
 
-    0. Interactive walkthrough — active walkthrough advance, cancel,
+    0. Active preview content inspection — deterministic, read-only
+       inspection of the authoritative active preview payload.
+    1. Interactive walkthrough — active walkthrough advance, cancel,
        off-topic replay, or new tour start request.
-    1. Time question — deterministic local-time / timezone answer.
-    2. Diagnostics refusal — blocked system-diagnostics phrasing.
-    3. Job review / evidence review — review request or explicit job ID.
-    4. Follow-up preview request — draft follow-up from prior job evidence.
-    5. Investigation derived-save — save the current derived artifact.
-    6. Investigation compare — compare investigation result references.
-    7. Investigation summary — summarise investigation result references.
-    8. Investigation expand (error path) — invalid expand reference.
-    9. Investigation save — save investigation findings to a governed preview.
-    10. Near-miss submit phrase — fail-closed block on fuzzy submit phrasing.
-    11. Stale draft reference — fail-closed when message references a draft
+    2. Time question — deterministic local-time / timezone answer.
+    3. Diagnostics refusal — blocked system-diagnostics phrasing.
+    4. Job review / evidence review — review request or explicit job ID.
+    5. Follow-up preview request — draft follow-up from prior job evidence.
+    6. Investigation derived-save — save the current derived artifact.
+    7. Investigation compare — compare investigation result references.
+    8. Investigation summary — summarise investigation result references.
+    9. Investigation expand (error path) — invalid expand reference.
+    10. Investigation save — save investigation findings to a governed preview.
+    11. Near-miss submit phrase — fail-closed block on fuzzy submit phrasing.
+    12. Stale draft reference — fail-closed when message references a draft
         but no active draft/preview exists in session context.
 
     Returns ``EarlyExitResult(matched=True)`` for the first condition that
@@ -204,14 +273,25 @@ def dispatch_early_exit_intent(
     preview via ``preview_routing.is_active_preview_revision_turn``),
     the preview-writing branches below are skipped so they cannot
     overwrite the active preview with an evidence-grounded follow-up.
-    The non-mutating branches (time, diagnostics refusal, job review
-    report, near-miss submit rejection, stale-draft reference) still
+    The non-mutating branches (time, active preview inspection,
+    diagnostics refusal, job review report, near-miss submit rejection,
+    stale-draft reference) still
     run — they do not touch preview state. The read-only investigation
     compare/summary branches also still run because they only write
     ``derived_investigation_output``, not the preview.
     """
 
-    # ── 0. Interactive walkthrough ───────────────────────────────────────
+    # ── 0. Active preview content inspection ─────────────────────────────
+    # Deterministic truth path: report canonical active preview content
+    # directly, without entering the normal LLM orchestration flow.
+    if _is_preview_content_inspection_request(message):
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=_build_preview_inspection_response(active_preview),
+            status="ok:active_preview_inspection",
+        )
+
+    # ── 1. Interactive walkthrough ───────────────────────────────────────
     # When the walkthrough is already active, handle cancel, advance, or
     # off-topic replay.  Checked BEFORE the tour-start pattern so that
     # messages containing "Voxera tour" mid-walkthrough do not restart.
@@ -249,7 +329,7 @@ def dispatch_early_exit_intent(
             status=status,
         )
 
-    # ── 1. Time question ──────────────────────────────────────────────────
+    # ── 2. Time question ──────────────────────────────────────────────────
     # Simple "what time is it?" / "what day is it?" questions are answered
     # deterministically from the system clock — no LLM needed.
     time_answer = answer_time_question(message)
@@ -259,8 +339,7 @@ def dispatch_early_exit_intent(
             assistant_text=time_answer,
             status="ok:time_question",
         )
-
-    # ── 2. Diagnostics refusal ─────────────────────────────────────────────
+    # ── 3. Diagnostics refusal ─────────────────────────────────────────────
     refusal = diagnostics_request_refusal(message)
     if refusal is not None:
         return EarlyExitResult(

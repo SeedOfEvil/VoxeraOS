@@ -867,6 +867,7 @@ async def run_vera_chat_turn(
         session_id=active_session,
         session_context=_session_ctx,
         active_preview_revision_in_flight=_active_preview_revision_in_flight,
+        active_preview=pending_preview if isinstance(pending_preview, dict) else None,
     )
     if _early.matched:
         # Review-lane orchestration: apply preview / context / derived-
