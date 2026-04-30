@@ -1791,3 +1791,14 @@ class TestPreviewInspectionDispatch:
             assert result.matched is True
             assert result.status == "ok:active_preview_inspection"
             assert "hello" in result.assistant_text
+
+    def test_inspection_still_runs_during_preview_revision_in_flight(self, tmp_path: Path) -> None:
+        result = _dispatch(
+            message="Where is the content?",
+            queue_root=tmp_path,
+            active_preview={"write_file": {"path": "~/x.txt", "content": "hello"}},
+            active_preview_revision_in_flight=True,
+        )
+        assert result.matched is True
+        assert result.status == "ok:active_preview_inspection"
+        assert "hello" in result.assistant_text

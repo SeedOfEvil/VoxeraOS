@@ -240,21 +240,21 @@ def dispatch_early_exit_intent(
 
     Checks evaluated (in order):
 
-    0. Interactive walkthrough — active walkthrough advance, cancel,
+    0. Active preview content inspection — deterministic, read-only
+       inspection of the authoritative active preview payload.
+    1. Interactive walkthrough — active walkthrough advance, cancel,
        off-topic replay, or new tour start request.
-    1. Time question — deterministic local-time / timezone answer.
-    1a. Active preview content inspection — deterministic, read-only
-        inspection of the authoritative active preview payload.
-    2. Diagnostics refusal — blocked system-diagnostics phrasing.
-    3. Job review / evidence review — review request or explicit job ID.
-    4. Follow-up preview request — draft follow-up from prior job evidence.
-    5. Investigation derived-save — save the current derived artifact.
-    6. Investigation compare — compare investigation result references.
-    7. Investigation summary — summarise investigation result references.
-    8. Investigation expand (error path) — invalid expand reference.
-    9. Investigation save — save investigation findings to a governed preview.
-    10. Near-miss submit phrase — fail-closed block on fuzzy submit phrasing.
-    11. Stale draft reference — fail-closed when message references a draft
+    2. Time question — deterministic local-time / timezone answer.
+    3. Diagnostics refusal — blocked system-diagnostics phrasing.
+    4. Job review / evidence review — review request or explicit job ID.
+    5. Follow-up preview request — draft follow-up from prior job evidence.
+    6. Investigation derived-save — save the current derived artifact.
+    7. Investigation compare — compare investigation result references.
+    8. Investigation summary — summarise investigation result references.
+    9. Investigation expand (error path) — invalid expand reference.
+    10. Investigation save — save investigation findings to a governed preview.
+    11. Near-miss submit phrase — fail-closed block on fuzzy submit phrasing.
+    12. Stale draft reference — fail-closed when message references a draft
         but no active draft/preview exists in session context.
 
     Returns ``EarlyExitResult(matched=True)`` for the first condition that
@@ -281,19 +281,23 @@ def dispatch_early_exit_intent(
     ``derived_investigation_output``, not the preview.
     """
 
-    # ── 0. Interactive walkthrough ───────────────────────────────────────
+    # ── 0. Active preview content inspection ─────────────────────────────
+    # Deterministic truth path: report canonical active preview content
+    # directly, without entering the normal LLM orchestration flow.
+    if _is_preview_content_inspection_request(message):
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=_build_preview_inspection_response(active_preview),
+            status="ok:active_preview_inspection",
+        )
+
+    # ── 1. Interactive walkthrough ───────────────────────────────────────
     # When the walkthrough is already active, handle cancel, advance, or
     # off-topic replay.  Checked BEFORE the tour-start pattern so that
     # messages containing "Voxera tour" mid-walkthrough do not restart.
     # The "submit it" message is NOT intercepted — advance returns None
     # at the final step so the normal EXPLICIT_SUBMIT lane handles it.
     if is_walkthrough_active(queue_root, session_id):
-        if _is_preview_content_inspection_request(message):
-            return EarlyExitResult(
-                matched=True,
-                assistant_text=_build_preview_inspection_response(active_preview),
-                status="ok:active_preview_inspection",
-            )
         if is_walkthrough_exit_request(message):
             clear_walkthrough(queue_root, session_id)
             return EarlyExitResult(
@@ -325,7 +329,7 @@ def dispatch_early_exit_intent(
             status=status,
         )
 
-    # ── 1. Time question ──────────────────────────────────────────────────
+    # ── 2. Time question ──────────────────────────────────────────────────
     # Simple "what time is it?" / "what day is it?" questions are answered
     # deterministically from the system clock — no LLM needed.
     time_answer = answer_time_question(message)
@@ -335,17 +339,7 @@ def dispatch_early_exit_intent(
             assistant_text=time_answer,
             status="ok:time_question",
         )
-    # ── 1a. Active preview content inspection ─────────────────────────────
-    # Deterministic truth path: report canonical active preview content
-    # directly, without entering the normal LLM orchestration flow.
-    if _is_preview_content_inspection_request(message):
-        return EarlyExitResult(
-            matched=True,
-            assistant_text=_build_preview_inspection_response(active_preview),
-            status="ok:active_preview_inspection",
-        )
-
-    # ── 2. Diagnostics refusal ─────────────────────────────────────────────
+    # ── 3. Diagnostics refusal ─────────────────────────────────────────────
     refusal = diagnostics_request_refusal(message)
     if refusal is not None:
         return EarlyExitResult(
