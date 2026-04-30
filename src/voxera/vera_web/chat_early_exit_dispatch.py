@@ -84,6 +84,63 @@ from ..vera.reference_resolver import (
 from ..vera.session_store import read_session_handoff_state
 from ..vera.time_context import answer_time_question
 
+_PREVIEW_INSPECTION_LIMIT = 1000
+_PREVIEW_INSPECTION_PATTERNS = (
+    re.compile(r"^\s*where(?:'s|\s+is)\s+(?:the\s+)?content\??\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what(?:'s|\s+is)\s+in\s+the\s+draft\??\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what(?:'s|\s+is)\s+in\s+the\s+preview\??\s*$", re.IGNORECASE),
+    re.compile(r"^\s*show me the content\s*$", re.IGNORECASE),
+    re.compile(r"^\s*show current preview content\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what content is in the draft\??\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what content is in the preview\??\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what will be written\??\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what are you going to write\??\s*$", re.IGNORECASE),
+    re.compile(r"^\s*show me what will be saved\s*$", re.IGNORECASE),
+    re.compile(r"^\s*show me the draft\s*$", re.IGNORECASE),
+)
+
+
+def _is_preview_content_inspection_request(message: str) -> bool:
+    return any(p.match(message) for p in _PREVIEW_INSPECTION_PATTERNS)
+
+
+def _extract_write_file_from_preview(
+    active_preview: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    if not isinstance(active_preview, dict):
+        return None
+    wf = active_preview.get("write_file")
+    return wf if isinstance(wf, dict) else None
+
+
+def _build_preview_inspection_response(active_preview: dict[str, Any] | None) -> str:
+    if not isinstance(active_preview, dict):
+        return "There is no active preview in this session right now."
+    wf = _extract_write_file_from_preview(active_preview)
+    if wf is None:
+        kind = str(active_preview.get("kind") or "").strip().lower()
+        if kind:
+            return (
+                "There is an active preview in this session, but it is not a write-file draft.\n\n"
+                f"Active preview kind: {kind}"
+            )
+        return "There is an active preview in this session, but it is not a write-file draft."
+    path = str(wf.get("path") or "(unknown path)")
+    content = str(wf.get("content") or "")
+    if not content:
+        return (
+            "Active write preview\n\n"
+            f"Path: {path}\n\n"
+            "Content is currently empty. I did not submit anything. "
+            "Please provide content or revise the draft before submitting."
+        )
+    preview = content[:_PREVIEW_INSPECTION_LIMIT]
+    truncated = len(content) - len(preview)
+    out = f"Active write preview\n\nPath: {path}\n\nContent:\n\n{preview}"
+    if truncated > 0:
+        out += f"\n\n*(truncated — {truncated} more characters)*"
+    return out
+
 
 @dataclass
 class EarlyExitResult:
@@ -168,6 +225,7 @@ def dispatch_early_exit_intent(
     session_id: str,
     session_context: dict[str, Any] | None = None,
     active_preview_revision_in_flight: bool = False,
+    active_preview: dict[str, Any] | None = None,
 ) -> EarlyExitResult:
     """Evaluate message against all early-exit intent conditions in chat() order.
 
@@ -258,6 +316,15 @@ def dispatch_early_exit_intent(
             matched=True,
             assistant_text=time_answer,
             status="ok:time_question",
+        )
+    # ── 1a. Active preview content inspection ─────────────────────────────
+    # Deterministic truth path: report canonical active preview content
+    # directly, without entering the normal LLM orchestration flow.
+    if _is_preview_content_inspection_request(message):
+        return EarlyExitResult(
+            matched=True,
+            assistant_text=_build_preview_inspection_response(active_preview),
+            status="ok:active_preview_inspection",
         )
 
     # ── 2. Diagnostics refusal ─────────────────────────────────────────────
