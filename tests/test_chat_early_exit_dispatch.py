@@ -51,6 +51,7 @@ def _dispatch(
     session_id: str = "test-session",
     session_context: dict[str, object] | None = None,
     active_preview: dict[str, object] | None = None,
+    active_preview_revision_in_flight: bool = False,
 ) -> EarlyExitResult:
     """Thin wrapper so tests don't have to pass every keyword argument."""
     return dispatch_early_exit_intent(
@@ -64,6 +65,7 @@ def _dispatch(
         session_id=session_id,
         session_context=session_context,
         active_preview=active_preview,
+        active_preview_revision_in_flight=active_preview_revision_in_flight,
     )
 
 
@@ -1793,6 +1795,8 @@ class TestPreviewInspectionDispatch:
             assert "hello" in result.assistant_text
 
     def test_inspection_still_runs_during_preview_revision_in_flight(self, tmp_path: Path) -> None:
+        # Contract guard: inspection is a read-only lane and should keep working
+        # even when preview mutation branches are revision-gated.
         result = _dispatch(
             message="Where is the content?",
             queue_root=tmp_path,
