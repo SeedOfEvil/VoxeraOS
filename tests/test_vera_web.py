@@ -175,6 +175,38 @@ def _brave_enabled_config(max_results: int = 5) -> AppConfig:
     )
 
 
+def test_chat_uses_pending_preview_for_content_inspection(tmp_path, monkeypatch):
+    queue = tmp_path / "queue"
+    _set_queue_root(monkeypatch, queue)
+    sid = "preview-inspection-wiring"
+
+    vera_session_store.write_session_preview(
+        queue,
+        sid,
+        {
+            "goal": "write a file called final-vera-content-smoke.txt with provided content",
+            "write_file": {
+                "path": "~/VoxeraOS/notes/final-vera-content-smoke.txt",
+                "content": "Here are 5 dad jokes for you:\n\n1. Joke one.\n2. Joke two.",
+                "mode": "overwrite",
+            },
+        },
+    )
+
+    async def _should_not_call_llm(**kwargs):  # pragma: no cover
+        raise AssertionError("LLM path should not run for deterministic preview inspection")
+
+    monkeypatch.setattr(vera_app_module, "generate_vera_reply", _should_not_call_llm)
+    client = TestClient(vera_app_module.app)
+    res = client.post("/chat", data={"session_id": sid, "message": "Where is the content?"})
+    assert res.status_code == 200
+    html = res.text
+    assert "Active write preview" in html
+    assert "Path: ~/VoxeraOS/notes/final-vera-content-smoke.txt" in html
+    assert "Here are 5 dad jokes for you" in html
+    assert "not a write-file draft" not in html
+
+
 def test_vera_web_page_renders_single_pane(tmp_path, monkeypatch):
     queue = tmp_path / "queue"
     _set_queue_root(monkeypatch, queue)
