@@ -109,8 +109,17 @@ def _extract_write_file_from_preview(
 ) -> dict[str, Any] | None:
     if not isinstance(active_preview, dict):
         return None
-    wf = active_preview.get("write_file")
-    return wf if isinstance(wf, dict) else None
+    direct = active_preview.get("write_file")
+    if isinstance(direct, dict):
+        return direct
+
+    payload = active_preview.get("payload")
+    if isinstance(payload, dict):
+        nested = payload.get("write_file")
+        if isinstance(nested, dict):
+            return nested
+
+    return None
 
 
 def _build_preview_inspection_response(active_preview: dict[str, Any] | None) -> str:

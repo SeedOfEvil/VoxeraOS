@@ -1623,6 +1623,44 @@ class TestOutputReviewDispatch:
 
 
 class TestPreviewInspectionDispatch:
+    def test_top_level_write_file_shape_is_recognized(self, tmp_path: Path) -> None:
+        result = _dispatch(
+            message="Where is the content?",
+            queue_root=tmp_path,
+            active_preview={
+                "goal": "write a file called final-vera-content-smoke.txt with provided content",
+                "write_file": {
+                    "path": "~/VoxeraOS/notes/final-vera-content-smoke.txt",
+                    "content": "Here are 5 dad jokes for you:\n\n1. Joke one.\n2. Joke two.",
+                    "mode": "overwrite",
+                },
+            },
+        )
+        assert result.matched is True
+        assert "Active write preview" in result.assistant_text
+        assert "Path: ~/VoxeraOS/notes/final-vera-content-smoke.txt" in result.assistant_text
+        assert "Here are 5 dad jokes for you" in result.assistant_text
+        assert "not a write-file draft" not in result.assistant_text
+
+    def test_nested_payload_write_file_shape_is_still_supported(self, tmp_path: Path) -> None:
+        result = _dispatch(
+            message="Where is the content?",
+            queue_root=tmp_path,
+            active_preview={
+                "kind": "write_file",
+                "payload": {
+                    "write_file": {
+                        "path": "~/VoxeraOS/notes/nested.txt",
+                        "content": "nested content",
+                        "mode": "overwrite",
+                    }
+                },
+            },
+        )
+        assert result.matched is True
+        assert "Path: ~/VoxeraOS/notes/nested.txt" in result.assistant_text
+        assert "nested content" in result.assistant_text
+
     def test_non_empty_write_preview(self, tmp_path: Path) -> None:
         result = _dispatch(
             message="Where is the content?",
