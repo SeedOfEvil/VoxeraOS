@@ -86,17 +86,17 @@ from ..vera.time_context import answer_time_question
 
 _PREVIEW_INSPECTION_LIMIT = 1000
 _PREVIEW_INSPECTION_PATTERNS = (
-    re.compile(r"^\s*where(?:'s|\s+is)\s+(?:the\s+)?content\??\s*$", re.IGNORECASE),
-    re.compile(r"^\s*what(?:'s|\s+is)\s+in\s+the\s+draft\??\s*$", re.IGNORECASE),
-    re.compile(r"^\s*what(?:'s|\s+is)\s+in\s+the\s+preview\??\s*$", re.IGNORECASE),
-    re.compile(r"^\s*show me the content\s*$", re.IGNORECASE),
-    re.compile(r"^\s*show current preview content\s*$", re.IGNORECASE),
-    re.compile(r"^\s*what content is in the draft\??\s*$", re.IGNORECASE),
-    re.compile(r"^\s*what content is in the preview\??\s*$", re.IGNORECASE),
-    re.compile(r"^\s*what will be written\??\s*$", re.IGNORECASE),
-    re.compile(r"^\s*what are you going to write\??\s*$", re.IGNORECASE),
-    re.compile(r"^\s*show me what will be saved\s*$", re.IGNORECASE),
-    re.compile(r"^\s*show me the draft\s*$", re.IGNORECASE),
+    re.compile(r"^\s*where(?:'s|\s+is)\s+(?:the\s+)?content[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what(?:'s|\s+is)\s+in\s+the\s+draft[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what(?:'s|\s+is)\s+in\s+the\s+preview[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*show me the content[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*show current preview content[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what content is in the draft[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what content is in the preview[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what will be written[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*what are you going to write[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*show me what will be saved[?.!]?\s*$", re.IGNORECASE),
+    re.compile(r"^\s*show me the draft[?.!]?\s*$", re.IGNORECASE),
 )
 
 
@@ -243,6 +243,8 @@ def dispatch_early_exit_intent(
     0. Interactive walkthrough — active walkthrough advance, cancel,
        off-topic replay, or new tour start request.
     1. Time question — deterministic local-time / timezone answer.
+    1a. Active preview content inspection — deterministic, read-only
+        inspection of the authoritative active preview payload.
     2. Diagnostics refusal — blocked system-diagnostics phrasing.
     3. Job review / evidence review — review request or explicit job ID.
     4. Follow-up preview request — draft follow-up from prior job evidence.
@@ -271,8 +273,9 @@ def dispatch_early_exit_intent(
     preview via ``preview_routing.is_active_preview_revision_turn``),
     the preview-writing branches below are skipped so they cannot
     overwrite the active preview with an evidence-grounded follow-up.
-    The non-mutating branches (time, diagnostics refusal, job review
-    report, near-miss submit rejection, stale-draft reference) still
+    The non-mutating branches (time, active preview inspection,
+    diagnostics refusal, job review report, near-miss submit rejection,
+    stale-draft reference) still
     run — they do not touch preview state. The read-only investigation
     compare/summary branches also still run because they only write
     ``derived_investigation_output``, not the preview.
@@ -285,6 +288,12 @@ def dispatch_early_exit_intent(
     # The "submit it" message is NOT intercepted — advance returns None
     # at the final step so the normal EXPLICIT_SUBMIT lane handles it.
     if is_walkthrough_active(queue_root, session_id):
+        if _is_preview_content_inspection_request(message):
+            return EarlyExitResult(
+                matched=True,
+                assistant_text=_build_preview_inspection_response(active_preview),
+                status="ok:active_preview_inspection",
+            )
         if is_walkthrough_exit_request(message):
             clear_walkthrough(queue_root, session_id)
             return EarlyExitResult(

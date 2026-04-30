@@ -1637,6 +1637,7 @@ class TestPreviewInspectionDispatch:
             },
         )
         assert result.matched is True
+        assert result.status == "ok:active_preview_inspection"
         assert "Active write preview" in result.assistant_text
         assert "Path: ~/VoxeraOS/notes/final-vera-content-smoke.txt" in result.assistant_text
         assert "Here are 5 dad jokes for you" in result.assistant_text
@@ -1658,6 +1659,7 @@ class TestPreviewInspectionDispatch:
             },
         )
         assert result.matched is True
+        assert result.status == "ok:active_preview_inspection"
         assert "Path: ~/VoxeraOS/notes/nested.txt" in result.assistant_text
         assert "nested content" in result.assistant_text
 
@@ -1687,6 +1689,7 @@ class TestPreviewInspectionDispatch:
             },
         )
         assert result.matched is True
+        assert result.status == "ok:active_preview_inspection"
         assert "*(truncated — 105 more characters)*" in result.assistant_text
 
     def test_empty_content(self, tmp_path: Path) -> None:
@@ -1695,12 +1698,14 @@ class TestPreviewInspectionDispatch:
             queue_root=tmp_path,
             active_preview={"write_file": {"path": "~/x.txt", "content": ""}},
         )
+        assert result.status == "ok:active_preview_inspection"
         assert "Content is currently empty" in result.assistant_text
         assert "I did not submit anything" in result.assistant_text
 
     def test_no_active_preview(self, tmp_path: Path) -> None:
         result = _dispatch(message="Where is the content?", queue_root=tmp_path)
         assert result.matched is True
+        assert result.status == "ok:active_preview_inspection"
         assert result.assistant_text == "There is no active preview in this session right now."
 
     @pytest.mark.parametrize(
@@ -1722,6 +1727,7 @@ class TestPreviewInspectionDispatch:
             },
         )
         assert result.matched is True
+        assert result.status == "ok:active_preview_inspection"
         assert "updated" in result.assistant_text
 
     def test_non_write_preview_is_truthful(self, tmp_path: Path) -> None:
@@ -1731,6 +1737,7 @@ class TestPreviewInspectionDispatch:
             active_preview={"kind": "run_command", "run_command": {"cmd": "echo hello"}},
         )
         assert result.matched is True
+        assert result.status == "ok:active_preview_inspection"
         assert "not a write-file draft" in result.assistant_text
         assert "Active preview kind: run_command" in result.assistant_text
 
@@ -1748,6 +1755,7 @@ class TestPreviewInspectionDispatch:
             },
         )
         assert result.matched is True
+        assert result.status == "ok:active_preview_inspection"
         assert "Here are 10 dad jokes for you" in result.assistant_text
         assert "final-vera-content-smoke.txt" in result.assistant_text
 
