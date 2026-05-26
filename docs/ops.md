@@ -1606,3 +1606,7 @@ Manual STV sequence for natural phrasing + strict queue handoff:
 - Answer-first file reads: file read outputs now surface actual bounded content (up to 2048 chars in evidence, up to 480 chars in surfaced text) plus file metadata (bytes, line count). Small files show full content; large files show a truncated excerpt.
 - Service status scope awareness: service status checks both system and user scopes. Voxera services running as user services are correctly reported. When scopes differ, both states are surfaced (e.g. "active/running (user service). In system scope: inactive/dead.").
 - Recent logs scope awareness: log retrieval tries both system and user-unit scopes and prefers whichever has actual content. Scope is shown in output. "No recent logs" is stated only when truly empty.
+
+## V1 release-candidate validation flow
+
+Use the authoritative release gate checklist: [docs/V1_RELEASE_CANDIDATE.md](V1_RELEASE_CANDIDATE.md).

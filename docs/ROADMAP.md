@@ -46,6 +46,13 @@ Key areas (current implementation state):
 
 ---
 
+
+## PR119 milestone — V1 release-candidate checklist and handoff
+
+- Add authoritative release gate checklist in `docs/V1_RELEASE_CANDIDATE.md`.
+- Link README/OPS/scope/command-surface/safety docs to release gate.
+- Add contract tests to prevent checklist drift.
+
 ## v0.2.0-Alpha — First Platform Milestone (next)
 
 **Theme:** Make Vera + VoxeraOS feel like a coherent AI operating system platform, not just a prototype.
